@@ -91,25 +91,13 @@ The loop also guards against a few things small models do. It nudges the model i
 
 ### Memory
 
-Jinn's memory is plain files under `~/Library/Application Support/Jinn/` (set `JINN_HOME` to use another folder):
+`Memory/ContextStore.swift` keeps everything under `~/Library/Application Support/Jinn/`:
 
-- `me.md` is the profile: `Key: value` lines (Name, Email, Phone...), your own free-form `##` sections, and a `## Learned` list of bullets Jinn adds. It goes into every prompt in full, with a "Not set yet" line so the model asks once for what is missing.
-- `notes/**/*.md|txt` is a library you can drop anything into. It is searched, never pasted whole.
-- `index.json` caches embeddings by text hash, so only new or edited text is ever embedded again.
+- `me.md` is your profile (name, email, writing style). It goes into every prompt.
+- `notes/*.md` are chunked and embedded with `nomic-embed-text`, and the three closest chunks to your request are added to the prompt. The index is rebuilt only when a note changes.
+- The `remember` tool appends to `notes/facts.md`.
 
-`Memory/` is split by what can be tested without a model: `Profile.swift` (parse and edit me.md), `Retrieval.swift` (tokenizer, BM25, rank fusion, chunking, secret detection) and `ContextStore.swift` (files, embedding cache, the tools). `--selftest` covers the first two.
-
-**Retrieval.** Each request runs a hybrid search: BM25 for exact words (names, IDs) and `nomic-embed-text` cosine for paraphrases ("food allergies" finds "Allergic to peanuts"), merged with Reciprocal Rank Fusion. Embeddings use nomic's `search_document:` / `search_query:` prefixes, which Ollama does not add. A hit must pass a relevance gate (cosine 0.52 or BM25 1.0), so an unrelated request gets no notes. If the embedding model is missing or Ollama is down, search quietly falls back to BM25. `Jinn --recall "query"` prints the hits and their scores.
-
-**Where memory is used.**
-
-1. Every run: the profile plus relevant notes go into the system prompt, labelled as data, not instructions.
-2. Forms: `chrome_open` and `chrome_read_form` append "Profile hints" (`"Email address" -> "r@x.com"`), matched by field synonyms (mobile = phone, employer = company). "Company name" is never answered with your name.
-3. Mid-task: the `recall` tool searches everything when the prompt does not have the answer.
-4. Writing: `update_profile` sets a field (asks first if it would overwrite a value); `remember` adds a learned fact. Both skip duplicates and refuse anything that looks like a password, code, key or card number.
-5. After a turn: if your own message states something about you ("I work at Acme", "call me Rit"), a short extra model call files it under `## Learned` and the HUD log shows `remembered: ...`. Only your words are used, never tool output or page text, so a web page cannot plant a "fact".
-
-Similarity is plain cosine over an in-memory array, which is plenty for personal notes and avoids a database dependency.
+Similarity is plain cosine over an in-memory array. That's plenty for a few notes and avoids a database dependency.
 
 ### Overlay and Voice
 
