@@ -16,9 +16,9 @@ logger = logging.getLogger(__name__)
 class GemmaLocalEngine:
     def __init__(
         self,
-        model_name: str = "gemma2:2b",
+        model_name: str = "gemma4:e4b",
         endpoint: str = "http://localhost:11434/api/generate",
-        timeout: int = 30,
+        timeout: int = 180,
         fallback_mode: bool = False
     ):
         self.model_name = model_name
@@ -36,7 +36,7 @@ class GemmaLocalEngine:
         except Exception:
             return False
 
-    def generate(self, prompt: str, system: Optional[str] = None) -> Dict[str, Any]:
+    def generate(self, prompt: str, system: Optional[str] = None, json_mode: bool = False) -> Dict[str, Any]:
         """Generates response from local Gemma or fallback engine."""
         if not self.fallback_mode and self.is_available():
             try:
@@ -51,6 +51,8 @@ class GemmaLocalEngine:
                 }
                 if system:
                     payload["system"] = system
+                if json_mode:
+                    payload["format"] = "json"
 
                 data = json.dumps(payload).encode("utf-8")
                 req = urllib.request.Request(

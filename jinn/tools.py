@@ -20,8 +20,7 @@ class LocalToolKit:
             "file_list": []
         }
         for root, dirs, files in os.walk(path):
-            if ".git" in root or "__pycache__" in root or "node_modules" in root:
-                continue
+            dirs[:] = [d for d in dirs if d not in {".git", "__pycache__", "node_modules", ".build", "references"}]
             summary["directories_count"] += len(dirs)
             for f in files:
                 rel = os.path.relpath(os.path.join(root, f), path)
