@@ -44,7 +44,7 @@ def main():
         print(json.dumps(res, indent=2))
 
     elif args.command == "act":
-        ask = lambda name, a: input(f"Jinn wants to run {name} {json.dumps(a)[:200]} - allow? [y/N] ").strip().lower() == "y"  # noqa: E731
+        ask = lambda name, a: input(f"Jinn wants to run {name} with:\n{json.dumps(a, indent=2)}\nAllow? [y/N] ").strip().lower() == "y"  # noqa: E731  full args, never truncated
         print(json.dumps(agent.act(args.task, confirm=ask), indent=2))
 
     elif args.command == "info":

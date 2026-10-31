@@ -30,7 +30,7 @@ final class Agent {
     /// Fixed order: a byte-stable prompt prefix lets Ollama reuse its KV cache across rounds.
     /// The model sees few tools (a small model picks better): look/act drive the screen and dispatch to these internally.
     static let internalTools: Set<String> = ["screen_read", "app_state", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "screen_ocr", "click_text", "click_at", "move_cursor",
-                                             "wait_for_text", "chrome_press", "chrome_type", "chrome_elements", "chrome_click", "chrome_tabs", "chrome_page", "chrome_read_form"]
+                                             "wait_for_text", "chrome_tabs", "chrome_page", "chrome_read_form"]
     let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
     let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
     var history: [Msg] = []
@@ -111,7 +111,7 @@ final class Agent {
                         result = "error: you already made this exact call; read its result and do something different"
                         repeats = 0
                     } else { return "Stopped: I kept repeating \(call.name) without progress." }
-                } else if let tool = tools[call.name] {
+                } else if let tool = tools[call.name], !Agent.internalTools.contains(call.name) { // internal tools are reachable only through act, which gates them
                     var args = call.args
                     // no app named = "the one in front": pin it now so approval and action cannot differ if the user switches apps
                     if case .app(let key) = tool.risk, args.opt(key).isEmpty, let n = try? Apps.target("").localizedName { args[key] = n }
@@ -152,9 +152,9 @@ func loopCorrection(text: String, truncated: Bool, acted: Bool) -> String? {
 }
 
 /// Tools that drive the screen: their success is only believable if the screen showed a change.
-let uiTools: Set<String> = ["act", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "click_text", "click_at", "chrome_press", "chrome_type", "chrome_click", "chrome_next", "chrome_fill_form"]
+let uiTools: Set<String> = ["act", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "click_text", "click_at", "chrome_next", "chrome_fill_form"]
 /// Tools that put fresh screen state in front of the model.
-let lookTools: Set<String> = ["look", "app_state", "screen_read", "screen_ocr", "chrome_page", "chrome_read_form", "chrome_elements", "chrome_open", "wait_for_text"]
+let lookTools: Set<String> = ["look", "app_state", "screen_read", "screen_ocr", "chrome_page", "chrome_read_form", "chrome_open", "wait_for_text"]
 
 /// What the model can honestly claim: nothing acted yet, last UI action confirmed on screen, it failed or changed nothing, or nobody checked.
 enum Evidence { case none, verified, failed, unverified }

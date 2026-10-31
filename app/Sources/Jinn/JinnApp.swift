@@ -261,7 +261,7 @@ func selfTest() {
 
     precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
     precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
-    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["chrome_click", "gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file"])
     precondition(Web.vet("http://[::ffff:127.0.0.1]/") != nil && Web.vet("http://[::ffff:10.1.2.3]/") != nil && Web.vet("http://[64:ff9b::7f00:1]/") != nil && Web.vet("http://[2002:7f00:1::]/") != nil)
     precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
     precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")

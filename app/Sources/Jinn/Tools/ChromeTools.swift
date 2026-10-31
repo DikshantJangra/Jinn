@@ -1,7 +1,7 @@
 import Foundation
 
 extension Chrome {
-    /// Wording that sends, submits, pays or destroys: only chrome_click (always asked) may press these.
+    /// Wording that sends, submits, pays or destroys: act asks the user before touching any of these.
     static let risky = try! NSRegularExpression(pattern: "\\b(send|submit|pay|buy|purchase|delete|remove|confirm|place order|post|publish)\\b", options: .caseInsensitive)
 }
 
@@ -69,25 +69,6 @@ let chromeTools: [Tool] = [
         try await Task.sleep(nanoseconds: 1_000_000_000)
         return r + "\n" + ((try? await Chrome.eval(Chrome.run("JSON.stringify(status())"), tab: tab)) ?? "")
     },
-    Tool(name: "chrome_elements", description: "List the clickable and editable things on the current Chrome page as #id role \"label\" (buttons, links, inbox rows, text boxes). Use when you need to click or type on any website and the text alone does not show how.",
-         params: ["url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm) { a in
-        try await Chrome.eval(Chrome.run("list()"), tab: a.opt("url_contains"))
-    },
-    Tool(name: "chrome_press", description: "Click something on a Chrome page by its text or #id from chrome_elements: open an email or thread, a tab, a link, a menu, Reply, Compose. Fuzzy matched. For Send/Submit/Pay/Delete use chrome_click instead.",
-         params: ["text": "Visible text, aria label, or #id", "url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm,
-         vet: { Chrome.risky.firstMatch(in: $0.opt("text"), range: NSRange($0.opt("text").startIndex..., in: $0.opt("text"))) == nil ? nil : "that looks like a send/submit/delete action; use chrome_click so the user is asked" }) { a in
-        let busy = try await Interrupt.waitIdle(pid: Chrome.pid)
-        let tab = a.opt("url_contains")
-        let r = try await retry(2, base: 0.5) { try await Chrome.eval(Chrome.run("clickT(\(Chrome.jsString(try a.str("text"))))"), tab: tab) }
-        try await Task.sleep(nanoseconds: 800_000_000)
-        return r + Interrupt.note(busy) + "\n" + ((try? await Chrome.eval(Chrome.page, tab: tab))?.prefix(1500).description ?? "")
-    },
-    Tool(name: "chrome_type", description: "Type text into a text box on a Chrome page: a plain field or a rich editor such as the Gmail reply/compose body. Target by label or #id from chrome_elements; leave empty for the focused box.",
-         params: ["text": "Text to type", "target": "(optional) label or #id of the box", "url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm) { a in
-        let busy = try await Interrupt.waitIdle(pid: Chrome.pid)
-        let r = try await Chrome.eval(Chrome.run("typeT(\(Chrome.jsString(a.opt("target"))),\(Chrome.jsString(try a.str("text"))))"), tab: a.opt("url_contains"))
-        return r + Interrupt.note(busy)
-    },
     Tool(name: "gmail_reply", description: "Reply to an email in Gmail (Chrome) end to end: finds the message in the inbox/search results by sender or subject text, opens it, clicks Reply, types your reply and, if send is true, sends it. The user is asked to approve first. Use this for any 'reply to the mail from X' request; do not look for the Reply button yourself.",
          params: ["find": "(optional) sender or subject text to find; omit if the email is already open", "text": "Reply text", "send": "(optional) true to send, otherwise leaves the reply open as a draft", "all": "(optional) true for Reply all"],
          risk: .confirm, alwaysAsk: true) { a in
@@ -127,11 +108,5 @@ let chromeTools: [Tool] = [
         guard sent.hasPrefix("clicked") else { throw JinnError("typed the reply but \(sent)") }
         let closed = (try? await wait("the reply to send", "!gBody()", 6)) != nil
         return (closed ? "Reply sent." : "Pressed Send but the reply box is still open; ask the user to check Gmail.") + Interrupt.note(busy)
-    },
-    Tool(name: "chrome_click", description: "Click anything on a Chrome page by its text or #id, including Send, Submit, Pay, Delete. Always asks the user first. Only when the user asked for that action.",
-         params: ["text": "Button or link text", "url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm, alwaysAsk: true) { a in
-        let busy = try await Interrupt.waitIdle(pid: Chrome.pid)
-        let r = try await Chrome.eval(Chrome.run("clickT(\(Chrome.jsString(try a.str("text"))))"), tab: a.opt("url_contains"))
-        return r + Interrupt.note(busy)
     },
 ]
