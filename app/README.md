@@ -9,7 +9,9 @@ build/Jinn.app/Contents/MacOS/Jinn --selftest             # logic checks
 build/Jinn.app/Contents/MacOS/Jinn --ask "tidy my downloads"  # headless, prints trace
 ```
 
-- **Option+Space**: tap = toggle HUD, hold = talk, release = run. Esc hides and stops speech.
+- **The lamp** sits bottom-right (voice only). **Hover** it to zoom to the centre (type, read replies, approve); move away and it returns to the corner. Click the lamp or use **Option+Space** (tap or hold) to talk; Esc collapses and stops speech.
+- **Undo**: say or type "undo" (or "undo 3" via the agent): moves files back, restores overwritten files and the clipboard, takes things out of the Trash, undoes typing, pulls back a Gmail send within seconds. Sent messages and shell commands are reported as not undoable.
+- **Context**: the HUD shows how full the model's window is. Old screen reads are dropped first, then old steps become a one-line digest. Notes in the notes folder and files you connect ("remember this file") are retrieved only when relevant.
 - **Permissions (once)**: Accessibility, Microphone, Speech Recognition, Automation (prompted per app).
 - **Profile**: menubar > Edit me.md. Notes in `~/Library/Application Support/Jinn/notes/*.md` are retrieved by local embeddings.
 - **Chrome form-fill**: `open -na 'Google Chrome' --args --remote-debugging-port=9222 --user-data-dir=$HOME/.jinn-chrome`

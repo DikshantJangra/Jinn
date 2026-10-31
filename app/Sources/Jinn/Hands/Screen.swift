@@ -30,11 +30,14 @@ enum Screen {
         return (hits[nth - 1], hits.count)
     }
 
-    static func windowFrame(_ pid: pid_t) -> CGRect? {
+    static func windowFrame(_ pid: pid_t) -> CGRect? { window(pid)?.frame }
+
+    /// Window server id + bounds of the app's front window.
+    static func window(_ pid: pid_t) -> (id: Int, frame: CGRect)? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowOwnerPID as String] as? pid_t) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
             if let b = w[kCGWindowBounds as String] as? [String: CGFloat], let wd = b["Width"], let ht = b["Height"], wd > 50, ht > 50 {
-                return CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: wd, height: ht)
+                return (w[kCGWindowNumber as String] as? Int ?? 0, CGRect(x: b["X"] ?? 0, y: b["Y"] ?? 0, width: wd, height: ht))
             }
         }
         return nil
@@ -51,22 +54,26 @@ enum Screen {
         return nil
     }
 
-    static func capture(_ r: CGRect) throws -> CGImage {
+    static func capture(_ r: CGRect, windowID: Int = 0) throws -> CGImage {
         guard CGPreflightScreenCaptureAccess() else {
             _ = CGRequestScreenCaptureAccess()
             throw JinnError.permission("Screen Recording")
         }
         let path = NSTemporaryDirectory() + "jinn-\(UUID().uuidString).png"
         defer { try? FileManager.default.removeItem(atPath: path) }
-        _ = try Shell.run("/usr/sbin/screencapture", ["-x", "-t", "png", "-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))", path], timeout: 10)
+        // the window itself (-l, no shadow): Jinn's own lamp and anything covering it never end up in the OCR
+        if windowID == 0 || (try? Shell.run("/usr/sbin/screencapture", ["-x", "-o", "-t", "png", "-l", "\(windowID)", path], timeout: 10)) == nil {
+            _ = try Shell.run("/usr/sbin/screencapture", ["-x", "-t", "png", "-R", "\(Int(r.minX)),\(Int(r.minY)),\(Int(r.width)),\(Int(r.height))", path], timeout: 10)
+        }
         guard let src = CGImageSourceCreateWithURL(URL(fileURLWithPath: path) as CFURL, nil), let img = CGImageSourceCreateImageAtIndex(src, 0, nil)
         else { throw JinnError("screenshot failed") }
         return img
     }
 
     static func read(_ app: NSRunningApplication) async throws -> (region: CGRect, items: [Seen]) {
-        guard let region = windowFrame(app.processIdentifier) else { throw JinnError("\(app.localizedName ?? "app") has no visible window to read") }
-        let img = try capture(region)
+        guard let win = window(app.processIdentifier) else { throw JinnError("\(app.localizedName ?? "app") has no visible window to read") }
+        let region = win.frame
+        let img = try capture(region, windowID: win.id)
         let items = try await Task.detached { () -> [Seen] in
             let req = VNRecognizeTextRequest()
             req.recognitionLevel = .accurate

@@ -3,6 +3,7 @@ import Foundation
 struct OpenAICompatClient: Brain {
     var model: String
     let base: URL
+    var contextLimit: Int { Int(env("JINN_CTX") ?? "") ?? 16384 }
 
     func wire(_ messages: [Msg]) -> [Msg] {
         var out: [Msg] = [], pending: [String] = [], n = 0
@@ -48,6 +49,6 @@ struct OpenAICompatClient: Brain {
         let text = m["content"] as? String ?? ""
         var msg: Msg = ["role": "assistant", "content": text]
         if !echoed.isEmpty { msg["tool_calls"] = echoed }
-        return Reply(msg: msg, text: text, calls: calls, truncated: choice["finish_reason"] as? String == "length")
+        return Reply(msg: msg, text: text, calls: calls, truncated: choice["finish_reason"] as? String == "length", promptTokens: (obj["usage"] as? [String: Any])?["prompt_tokens"] as? Int)
     }
 }

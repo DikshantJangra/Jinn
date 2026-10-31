@@ -17,7 +17,7 @@ struct JinnApp: App {
 
     var body: some Scene {
         MenuBarExtra("Jinn", systemImage: "wand.and.stars") {
-            Button("Show Jinn  (Option+Space)") { HUDController.shared.show() }
+            Button("Open Jinn (or hover the lamp)") { HUDController.shared.show() }
             Toggle("Auto mode (still asks for shell and messages)", isOn: Binding(get: { modeRaw == "auto" }, set: { modeRaw = $0 ? "auto" : "ask" }))
             Button("Edit me.md") { NSWorkspace.shared.open(ContextStore.meURL) }
             Divider()
@@ -94,14 +94,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard !self.down else { return }
             self.down = true; self.pressedAt = Date()
             if hud.model.listening { self.swallow = true; hud.model.finishListening(); return }
-            hud.show(); hud.model.startListening()
+            hud.model.startListening()
         } }
         hotkey.onRelease = { Task { @MainActor in
             self.down = false
             if self.swallow { self.swallow = false; return }
             if Date().timeIntervalSince(self.pressedAt) >= 0.4 { hud.model.finishListening() }
         } }
-        hud.show()
+        hud.showMini()
     }
 }
 
@@ -168,9 +168,15 @@ func selfTest() {
     for i in 0..<10 {
         h += [["role": "user", "content": "q\(i)"], ["role": "assistant", "content": "", "tool_calls": []], ["role": "tool", "content": String(repeating: "x", count: 5000)], ["role": "assistant", "content": "a\(i)"]]
     }
-    let c = compact(h, keepRecent: 4, budget: 8000)
-    precondition(c[0]["role"] as? String == "system" && c[1]["role"] as? String == "user")
-    precondition(c.last?["content"] as? String == "a9" && c.reduce(0) { $0 + (($1["content"] as? String)?.count ?? 0) } <= 8000)
+    let c = compact(h, task: "q9", budget: 2500, keepRecent: 4).messages
+    precondition(c[0]["role"] as? String == "system" && c.contains { ($0["content"] as? String) == "q9" } && c.last?["content"] as? String == "a9" && estimateTokens(c) <= 2500, "compact \(estimateTokens(c))")
+    // this run's old steps become a digest, superseded looks shrink, and the task/newest step survive
+    var run: [Msg] = [["role": "system", "content": "sys"], ["role": "user", "content": "do it"]]
+    for i in 0..<8 { run += [["role": "assistant", "content": "", "tool_calls": [["function": ["name": "look", "arguments": ["app": "A\(i)"]]]]], ["role": "tool", "content": String(repeating: "e", count: 900), "tool_name": "look"]] }
+    run += [["role": "assistant", "content": "", "tool_calls": [["function": ["name": "act", "arguments": ["target": "#1"]]]]], ["role": "tool", "content": "clicked\nChanged:\n+ x", "tool_name": "act"]]
+    let rc = compact(run, task: "do it", budget: 400, keepRecent: 4)
+    precondition(rc.messages[1]["content"] as? String == "do it" && (rc.messages[2]["content"] as? String)?.hasPrefix("[Progress so far") == true && rc.messages.last?["tool_name"] as? String == "act" && rc.dropped > 0, "digest")
+    precondition(estimateTokens("abc") == 1 && estimateTokens([["content": "abcdef"]]) == 6)
 
     let w = OpenAICompatClient(model: "m", base: URL(string: "http://x")!).wire([
         ["role": "assistant", "content": "", "tool_calls": [["function": ["name": "t", "arguments": ["a": "b"]]]]],
@@ -293,7 +299,7 @@ func selfTest() {
 
     precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
     precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
-    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["connect_file", "gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file", "undo"])
     precondition(Web.vet("http://[::ffff:127.0.0.1]/") != nil && Web.vet("http://[::ffff:10.1.2.3]/") != nil && Web.vet("http://[64:ff9b::7f00:1]/") != nil && Web.vet("http://[2002:7f00:1::]/") != nil)
     precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
     precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")
@@ -320,8 +326,37 @@ func selfTest() {
     precondition(actNeedsApproval(["action": "press", "text": "cmd+Return"]) && actNeedsApproval(["action": "press", "text": "Return"]) && actNeedsApproval(["action": "press", "text": "cmd+a"]) && actNeedsApproval(["action": "press", "text": "space"]) && !actNeedsApproval(["action": "press", "text": "Tab"]) && !actNeedsApproval(["action": "press", "text": "PageDown"]) && actNeedsApproval(["action": "type", "text": "a\nb"]) && !actNeedsApproval(["action": "type", "text": "hi"]) && !actNeedsApproval(["action": "scroll", "target": "Send"]))
     Observed.set(.none, app: "", labels: [:])
 
+    // undo (runs off the main actor: its closures must not hop back to the blocked main thread)
+    let semU = DispatchSemaphore(value: 0)
+    var undoResult = ""
+    Task.detached { undoResult = await undoCheck(); semU.signal() }
+    semU.wait()
+    precondition(undoResult == "ok", "undo: \(undoResult)")
+
     // approvals: tool scopes are independent; auto mode is the only global bypass
     precondition(PermissionMode(rawValue: "auto") == .auto && PermissionMode(rawValue: "x") == nil)
 
     print("selftest ok")
+}
+
+/// Undo journal behaviour: newest first, irreversible entries are reported (not skipped), moved files return home.
+func undoCheck() async -> String {
+    final class Log: @unchecked Sendable { var order: [String] = [] }
+    let log = Log(), u = Undo()
+    u.record("a") { log.order.append("a"); return "ok" }
+    u.record("sent mail")
+    u.record("b") { log.order.append("b"); return "ok" }
+    let r1 = await u.undo(), r2 = await u.undo(), r3 = await u.undo(), r4 = await u.undo()
+    guard log.order == ["b", "a"], r1.contains("Undid \"b\""), r2.contains("Cannot undo \"sent mail\""), r3.contains("Undid \"a\""), r4 == "Nothing to undo." else { return "order \(r1)|\(r2)|\(r3)|\(r4)" }
+
+    let dir = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/.jinn-undo-\(UUID())")
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let a = dir.appendingPathComponent("a.txt").path, b = dir.appendingPathComponent("b.txt").path
+    try? "x".write(toFile: a, atomically: true, encoding: .utf8)
+    _ = try? await allTools.first { $0.name == "move_file" }!.run(["from": a, "to": b])
+    let back = await Undo.shared.undo()
+    guard FileManager.default.fileExists(atPath: a), !FileManager.default.fileExists(atPath: b), back.contains("moved back") else { return "move undo: \(back)" }
+    guard irreversibleLabel(tool: "send_chat", args: ["contact": "Bob", "app": "WhatsApp"]) != nil, irreversibleLabel(tool: "reply_mail", args: ["send": "false"]) == nil else { return "irreversible labels" }
+    return "ok"
 }

@@ -36,4 +36,4 @@ extension Dictionary where Key == String, Value == Any {
     func opt(_ k: String) -> String { (try? str(k)) ?? "" }
 }
 
-let allTools: [Tool] = fileTools + systemTools + appTools + webTools + universalTools + axTools + screenTools + controlTools + chromeTools + shellTools + [rememberTool, recallTool, profileTool]
+let allTools: [Tool] = fileTools + systemTools + appTools + webTools + universalTools + axTools + screenTools + controlTools + chromeTools + shellTools + undoTools + [rememberTool, recallTool, profileTool, connectFileTool]

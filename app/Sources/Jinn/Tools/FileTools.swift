@@ -23,6 +23,8 @@ func safePath(_ p: String) throws -> String {
 func organize(_ dir: URL) throws -> Int {
     let fm = FileManager.default
     var moved = 0
+    var log: [(from: String, to: String)] = []
+    defer { if !log.isEmpty { let l = log; Undo.shared.record("sorted \(l.count) files in \(dir.lastPathComponent)") { try l.reversed().forEach { _ = try moveBack($0.to, $0.from) }; return "put \(l.count) files back" } } }
     for f in try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil, options: .skipsHiddenFiles) {
         guard let cat = category(for: f.pathExtension.lowercased()) else { continue }
         let sub = dir.appendingPathComponent(cat)
@@ -30,6 +32,7 @@ func organize(_ dir: URL) throws -> Int {
         let dest = sub.appendingPathComponent(f.lastPathComponent)
         guard !fm.fileExists(atPath: dest.path) else { continue }
         try fm.moveItem(at: f, to: dest)
+        log.append((f.path, dest.path))
         moved += 1
     }
     return moved
@@ -55,7 +58,9 @@ let fileTools: [Tool] = [
         let to = URL(fileURLWithPath: try safePath(a.str("to")))
         try vetWrite(to.path)
         try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try FileManager.default.moveItem(atPath: try safePath(a.str("from")), toPath: to.path)
+        let from = try safePath(a.str("from"))
+        try FileManager.default.moveItem(atPath: from, toPath: to.path)
+        Undo.shared.record("moved \((from as NSString).lastPathComponent)") { try moveBack(to.path, from) }
         return "Moved."
     },
 ]

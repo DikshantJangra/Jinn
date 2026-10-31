@@ -42,6 +42,11 @@ private func focusedIsSecure(_ app: NSRunningApplication) -> Bool {
     return AX.str(f as! AXUIElement, kAXSubroleAttribute) == "AXSecureTextField"
 }
 
+/// Typing is undone with the app's own Cmd+Z (best effort: apps group typing differently).
+func recordTyping(_ pid: pid_t, _ name: String) {
+    Undo.shared.record("typed in \(name)") { let (c, f) = try Keys.parse("cmd+z"); await Input.key(pid, c, flags: f); return "sent Undo to \(name)" }
+}
+
 private let pick: [String: String] = ["app": "Running app name",
                                       "element": "(optional) element index from the latest app_state",
                                       "label": "(optional) text on the element, if you have no index"]
@@ -90,6 +95,11 @@ let axTools: [Tool] = [
         let busy = try await Interrupt.waitIdle(pid: t.app.processIdentifier)
         let e = AXUIElementSetAttributeValue(t.node.el, kAXValueAttribute as CFString, try a.str("value") as CFString)
         guard e == .success else { throw JinnError("could not set [\(t.node.index)]: \(AX.describe(e)); try type_text") }
+        let el = t.node.el, old = t.node.value
+        Undo.shared.record("set \"\(t.node.label.prefix(30))\"") {
+            guard AXUIElementSetAttributeValue(el, kAXValueAttribute as CFString, old as CFString) == .success else { throw JinnError("the field changed or closed") }
+            return "restored its previous text"
+        }
         return try await finish("set [\(t.node.index)] \(t.node.label)", t, busy: busy)
     },
 
@@ -107,6 +117,7 @@ let axTools: [Tool] = [
             await Input.key(app.processIdentifier, 0, flags: .maskCommand); await Input.key(app.processIdentifier, 51)
         }
         await Input.type(app.processIdentifier, try a.str("text"))
+        recordTyping(app.processIdentifier, app.localizedName ?? "app")
         return "typed" + Interrupt.note(busy) + "\n" + (await observe(app, since: t?.before ?? Snapshot.latest(app.processIdentifier)))
     },
 

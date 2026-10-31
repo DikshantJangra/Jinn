@@ -6,6 +6,7 @@ struct OllamaClient: Brain {
     var model: String
     let base = URL(string: "http://localhost:11434")!
     var contextSize = Int(env("JINN_CTX") ?? "") ?? 16384
+    var contextLimit: Int { contextSize }
 
     func post(_ path: String, _ body: [String: Any]) async throws -> [String: Any] {
         var r = URLRequest(url: base.appendingPathComponent(path))
@@ -47,7 +48,7 @@ struct OllamaClient: Brain {
             msg["content"] = ""
             msg["tool_calls"] = [["function": ["name": t.name, "arguments": t.args]]]
         }
-        return Reply(msg: msg, text: calls.isEmpty ? text : "", calls: calls, truncated: res["done_reason"] as? String == "length")
+        return Reply(msg: msg, text: calls.isEmpty ? text : "", calls: calls, truncated: res["done_reason"] as? String == "length", promptTokens: res["prompt_eval_count"] as? Int)
     }
 
     func warm() async { _ = try? await post("api/generate", ["model": model, "keep_alive": "30m"]) }

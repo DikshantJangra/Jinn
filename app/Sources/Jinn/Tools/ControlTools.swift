@@ -8,6 +8,7 @@ let controlTools: [Tool] = [
          params: ["app": "Running app name"], risk: .app("app")) { a in
         let app = try Apps.resolve(try a.str("app"))
         guard app.terminate() else { throw JinnError("\(app.localizedName ?? "app") refused to quit") }
+        if let url = app.bundleURL { Undo.shared.record("quit \(app.localizedName ?? "app")") { _ = try Shell.run("/usr/bin/open", [url.path]); return "reopened it (unsaved work is not restored)" } }
         return "Asked \(app.localizedName ?? "app") to quit."
     },
     Tool(name: "close_window", description: "Close the front window of an app (its red close button), without focusing it. The app keeps running.",
@@ -33,17 +34,19 @@ let controlTools: [Tool] = [
     Tool(name: "hide_app", description: "Hide an app's windows (like Cmd+H).", params: ["app": "Running app name"], risk: .app("app")) { a in
         let app = try Apps.resolve(try a.str("app"))
         app.hide()
+        Undo.shared.record("hid \(app.localizedName ?? "app")") { app.unhide(); return "shown again" }
         return "Hid \(app.localizedName ?? "app")."
     },
     Tool(name: "find_chat", description: "List the chats in a chat app (WhatsApp, Telegram, Slack, Discord) whose name matches, best first, so the user can pick. Read-only. With no contact, lists the visible chats.",
          params: ["app": "Chat app name", "contact": "(optional) name to look for"], risk: .app("app")) { a in
         let app = try Apps.resolve(try a.str("app"))
-        let snap = try await Snapshot.take(app)
+        let snap = try await Snapshot.take(app, main: true)
         let q = a.opt("contact")
         if q.isEmpty {
             return snap.visible().filter { $0.interactive && !$0.label.isEmpty && !AX.textual.contains($0.role) }.map { chatTitle($0.label) }.joined(separator: "\n")
         }
         let m = chatMatches(q, in: snap)
+        if m.isEmpty, let open = openChatTitle(q, in: snap) { return "\(open) (already open)" }
         return m.isEmpty ? "No visible chat matches \"\(q)\". send_chat will search the whole app." : m.prefix(8).map { "\($0.head) (\(Int($0.score * 100))%)" }.joined(separator: "\n")
     },
     Tool(name: "send_chat", description: "Send a message to a person or group in a chat app (WhatsApp, Telegram, Slack, Discord). Brings the app to the front, finds the chat by name (spelling may differ slightly), checks the text reached the message box, then sends. Asks the user first. If it fails, report why; do not retry by hand.",
@@ -62,8 +65,9 @@ let controlTools: [Tool] = [
             for _ in 0..<15 where NSWorkspace.shared.frontmostApplication?.processIdentifier != pid { try await Task.sleep(nanoseconds: 200_000_000) }
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) would not come to the front; nothing was sent") }
             // pid-0 input goes to whatever is focused: re-check right before every keystroke
-        func front() throws { guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) lost focus; stopped before typing, nothing was sent") } }
-        func look() async throws -> Snapshot { try await Task.sleep(nanoseconds: 700_000_000); return try await Snapshot.take(app) }
+            func front() throws { guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) lost focus; stopped before typing, nothing was sent") } }
+            // always read the main window: a contact card or popup can hold focus and hides the real UI
+            func look() async throws -> Snapshot { try await Task.sleep(nanoseconds: 700_000_000); AX.closeExtraWindows(AXUIElementCreateApplication(pid)); return try await Snapshot.take(app, main: true) }
             func focus(_ n: Node, _ s: Snapshot) async throws {
                 if !AX.textual.contains(n.role) || AXUIElementSetAttributeValue(n.el, kAXFocusedAttribute as CFString, true as CFBoolean) != .success {
                     _ = try await Click.perform(n, in: s, appPID: pid, right: false, double: false)
@@ -72,9 +76,11 @@ let controlTools: [Tool] = [
             }
             let isSearch: (Node) -> Bool = { ($0.role == "AXButton" || AX.textual.contains($0.role)) && $0.label.lowercased().contains("search") }
 
-            var snap = try await Snapshot.take(app)
+            AX.closeExtraWindows(AXUIElementCreateApplication(pid))
+            var snap = try await Snapshot.take(app, main: true)
             var found = chatMatches(contact, in: snap)
-            if found.isEmpty {
+            let alreadyOpen = found.isEmpty ? openChatTitle(contact, in: snap) : nil // the wanted chat is on screen already
+            if found.isEmpty && alreadyOpen == nil {
                 if let f = snap.visible().first(where: isSearch) { try await focus(f, snap) }
                 else { let (c, fl) = try Keys.parse(chatSearchKey[app.bundleIdentifier?.lowercased() ?? ""] ?? "cmd+f"); try front(); await Input.key(0, c, flags: fl) }
                 // the field keeps the previous query: clear it, but only once it verifiably has focus (Delete elsewhere could act on a chat)
@@ -88,35 +94,44 @@ let controlTools: [Tool] = [
                 found = chatMatches(contact, in: snap)
             }
 
+            var head = alreadyOpen ?? ""
+            if alreadyOpen == nil {
             guard let top = found.first else { throw JinnError("no chat matching \"\(contact)\" found in \(shown); nothing was sent") }
             if found.count > 1, found[1].score >= top.score - 0.05 {
                 throw JinnError("several chats match \"\(contact)\": \(found.prefix(4).map(\.head).joined(separator: " | ")). Tell the user these names and ask which one; nothing was sent")
             }
+            head = top.head
             try await focus(top.node, snap)
             snap = try await look()
+            }
+            // the chat must really be open (its name shows in the pane right of the list), not a profile or the same list
+            let edge = sidebarEdge(snap), want = head.lowercased()
+            guard snap.nodes.contains(where: { ($0.frame?.minX ?? 0) > edge && ($0.label + $0.value).lowercased().contains(want) }),
+                  snap.nodes.contains(where: { AX.textual.contains($0.role) && ($0.frame?.minX ?? 0) > edge })
+            else { throw JinnError("clicked \(head) but the chat did not open (no message pane); nothing was sent") }
 
-            let boxes = snap.visible().filter { AX.textual.contains($0.role) && !isSearch($0) }
+            let boxes = snap.visible().filter { AX.textual.contains($0.role) && !isSearch($0) && ($0.frame?.minX ?? .infinity) > edge }
             guard let box = boxes.first(where: { $0.label.lowercased().contains("message") || $0.label.lowercased().hasPrefix("type") }) ?? boxes.last
-            else { throw JinnError("opened \(top.head) but found no message box; nothing was sent") }
+            else { throw JinnError("opened \(head) but found no message box; nothing was sent") }
             if box.secure { throw JinnError.blocked("password field") }
             try await focus(box, snap)
             try front(); await Input.type(0, text)
             let probe = String(text.prefix(20)).lowercased()
             snap = try await look()
             guard snap.nodes.contains(where: { AX.textual.contains($0.role) && $0.value.lowercased().contains(probe) }) else {
-                throw JinnError("typing did not reach the message box of \(top.head); nothing was sent")
+                throw JinnError("typing did not reach the message box of \(head); nothing was sent")
             }
             try front(); await Input.key(0, try Keys.parse("Return").code)
             snap = try await look()
             let seen = snap.nodes.contains { !AX.textual.contains($0.role) && ($0.label + $0.value).lowercased().contains(probe) }
-            return seen ? "Sent to \(top.head) in \(shown)." : "Pressed Return in \(top.head)'s chat but could not see the message appear; ask the user to check \(shown)."
+            return seen ? "Sent to \(head) in \(shown)." : "Pressed Return in \(head)'s chat but could not see the message appear; ask the user to check \(shown)."
         }
     },
 ]
 
 func withHUDHidden<T>(_ body: () async throws -> T) async rethrows -> T {
-    await MainActor.run { HUDController.shared.hide() }
-    defer { Task { @MainActor in HUDController.shared.show() } }
+    let was = await MainActor.run { HUDController.shared.suspend() }
+    defer { Task { @MainActor in HUDController.shared.resume(was) } }
     return try await body()
 }
 
@@ -125,8 +140,27 @@ func chatTitle(_ label: String) -> String {
     return String(clean.split(separator: ",", maxSplits: 1).first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
+/// Right edge of the chat list: the splitter if the app has one, else 45% across the window.
+func sidebarEdge(_ snap: Snapshot) -> CGFloat {
+    if let sp = snap.nodes.first(where: { $0.role == "AXSplitter" })?.frame { return sp.minX + 6 }
+    guard let w = snap.nodes.first?.frame else { return .infinity }
+    return w.minX + w.width * 0.45
+}
+
+/// Title of the chat that is already open in the right-hand pane (its header button) when it matches the query.
+func openChatTitle(_ query: String, in snap: Snapshot) -> String? {
+    let edge = sidebarEdge(snap)
+    // only the conversation header band counts (a message bubble or link that merely contains the name must not), and near-exact
+    let top = (snap.nodes.first?.frame?.minY ?? 0) + 110
+    return snap.visible().first { $0.interactive && ($0.frame.map { $0.minX > edge && $0.minY < top } ?? false) && !chatTitle($0.label).hasPrefix("Start ")
+        && nameScore(query, $0.label, ordered: true) >= 0.95 }.map { chatTitle($0.label) }
+}
+
 func chatMatches(_ query: String, in snap: Snapshot) -> [(head: String, node: Node, score: Double)] {
-    let rows = snap.visible().filter { $0.interactive && !$0.label.isEmpty && !AX.textual.contains($0.role) && !chatTitle($0.label).hasPrefix("Start ") }
+    // only the chat list on the left: the open chat's header button (right) opens the contact card instead of the chat
+    let edge = sidebarEdge(snap)
+    let rows = snap.visible().filter { $0.interactive && !$0.label.isEmpty && !AX.textual.contains($0.role) && !chatTitle($0.label).hasPrefix("Start ")
+        && ($0.frame.map { $0.minX < edge } ?? true) }
     for ordered in [true, false] {
         let hits = rows.map { (head: chatTitle($0.label), node: $0, score: nameScore(query, $0.label, ordered: ordered)) }.filter { $0.score >= 0.8 }
         let best = Dictionary(grouping: hits, by: { $0.head.lowercased() }).values
