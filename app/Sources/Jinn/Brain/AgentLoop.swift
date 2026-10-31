@@ -25,7 +25,6 @@ func systemPrompt(_ ctx: String) -> String {
 
 final class Agent {
     let small: Brain = makeBrain(env("JINN_MODEL") ?? "gemma4:e4b")
-    /// Optional escalation model (bigger local model). Set JINN_BIG_MODEL; nothing leaves the Mac unless you point it at a remote server.
     let big: Brain? = env("JINN_BIG_MODEL").map(makeBrain)
     let tools = Dictionary(uniqueKeysWithValues: allTools.map { ($0.name, $0) })
     /// Fixed order: a byte-stable prompt prefix lets Ollama reuse its KV cache across rounds.
@@ -35,17 +34,15 @@ final class Agent {
     let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
     let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
     var history: [Msg] = []
-    /// Asked before any non-.safe tool runs. nil = deny (fail closed).
     var confirm: (@Sendable (ConfirmRequest) async -> Decision)?
 
-    /// nil = go ahead, else the refusal text to hand back to the model.
     private func authorize(_ tool: Tool, _ args: [String: Any], _ summary: String) async -> String? {
         if let why = tool.vet?(args) { return "error: \(JinnError.blocked(why).message)" }
         let scope: String, persist: Bool
         switch tool.risk {
         case .safe: return nil
         case .confirm: scope = "tool:" + tool.name; persist = false
-        case .app(let key): // approvals are keyed on the resolved bundle id, never on the model-typed name
+        case .app(let key):
             guard let app = try? Apps.target(args.opt(key)), let bid = app.bundleIdentifier?.lowercased()
             else { return "error: missing, unknown or blocked app" }
             scope = bid; persist = true
@@ -110,7 +107,6 @@ final class Agent {
                 var result: String
                 let t0 = Date()
                 if failed.contains(sig) || repeats >= 2 {
-                    // stalled: repeating a failed call, or the same call 3x in a row
                     if escalate(repeats >= 2 ? "same call 3 times" : "repeated failing call") {
                         result = "error: you already made this exact call; read its result and do something different"
                         repeats = 0
@@ -138,16 +134,12 @@ final class Agent {
                 emit("<- \(result.prefix(300))")
                 messages.append(["role": "tool", "content": result, "tool_name": call.name])
             }
-            // out of rounds: hand the same conversation to the bigger model instead of restarting (a restart would redo actions)
             if round == limit, escalate("hit \(limit) rounds") { limit += maxRounds }
         }
         return "Stopped after \(limit) tool rounds."
     }
 }
 
-/// Corrective message for a turn that ended without a tool call but should not end (ideas from Agent! LoopControl):
-/// output cut off at the token limit, or a small model narrating an action it never performed.
-/// A claim after tools already ran is a normal summary, so only a run with no tool calls at all is challenged.
 func loopCorrection(text: String, truncated: Bool, acted: Bool) -> String? {
     if truncated { return "Your reply was cut off. Continue exactly where you stopped." }
     if acted { return nil }

@@ -15,11 +15,9 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", help="Subcommand to execute")
 
-    # Command: plan
     plan_parser = subparsers.add_parser("plan", help="Plan a complex task using Gemma locally")
     plan_parser.add_argument("task", type=str, help="Description of the task to plan")
 
-    # Command: audit
     audit_parser = subparsers.add_parser("audit", help="Run local audit of current directory")
     audit_parser.add_argument("--dir", default=".", help="Directory to audit")
 

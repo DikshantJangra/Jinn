@@ -21,7 +21,7 @@ class JinnAgent:
 
         try:
             raw = result["response"].strip()
-            if "{" in raw:  # tolerate fences/prose around the JSON (gemma4 on Ollama has no format=json)
+            if "{" in raw:
                 raw = raw[raw.index("{"):raw.rindex("}") + 1]
             plan = json.loads(raw)
         except Exception:

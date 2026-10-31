@@ -1,7 +1,6 @@
 import AppKit
 import ApplicationServices
 
-/// Search-the-chat shortcut per messaging app (bundle id prefix); default cmd+f.
 private let chatSearchKey: [String: String] = ["com.tinyspeck.slackmacgap": "cmd+k", "com.hnc.discord": "cmd+k"]
 
 let controlTools: [Tool] = [
@@ -66,16 +65,13 @@ let controlTools: [Tool] = [
         func front() throws { guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) lost focus; stopped before typing, nothing was sent") } }
         func look() async throws -> Snapshot { try await Task.sleep(nanoseconds: 700_000_000); return try await Snapshot.take(app) }
             func focus(_ n: Node, _ s: Snapshot) async throws {
-                // text boxes take AX focus directly; everything else gets a real click
                 if !AX.textual.contains(n.role) || AXUIElementSetAttributeValue(n.el, kAXFocusedAttribute as CFString, true as CFBoolean) != .success {
                     _ = try await Click.perform(n, in: s, appPID: pid, right: false, double: false)
                 }
                 try await Task.sleep(nanoseconds: 300_000_000)
             }
-            // WhatsApp's Search is a button that opens the field; other apps have a text field
             let isSearch: (Node) -> Bool = { ($0.role == "AXButton" || AX.textual.contains($0.role)) && $0.label.lowercased().contains("search") }
 
-            // 1. the chat is often already in the list; otherwise search for it
             var snap = try await Snapshot.take(app)
             var found = chatMatches(contact, in: snap)
             if found.isEmpty {
@@ -92,7 +88,6 @@ let controlTools: [Tool] = [
                 found = chatMatches(contact, in: snap)
             }
 
-            // 2. closest spelling wins; a near tie is ambiguous and nothing is sent
             guard let top = found.first else { throw JinnError("no chat matching \"\(contact)\" found in \(shown); nothing was sent") }
             if found.count > 1, found[1].score >= top.score - 0.05 {
                 throw JinnError("several chats match \"\(contact)\": \(found.prefix(4).map(\.head).joined(separator: " | ")). Tell the user these names and ask which one; nothing was sent")
@@ -100,7 +95,6 @@ let controlTools: [Tool] = [
             try await focus(top.node, snap)
             snap = try await look()
 
-            // 3. type into the message box and make sure the text is really there before sending
             let boxes = snap.visible().filter { AX.textual.contains($0.role) && !isSearch($0) }
             guard let box = boxes.first(where: { $0.label.lowercased().contains("message") || $0.label.lowercased().hasPrefix("type") }) ?? boxes.last
             else { throw JinnError("opened \(top.head) but found no message box; nothing was sent") }
@@ -120,29 +114,23 @@ let controlTools: [Tool] = [
     },
 ]
 
-/// Jinn's own HUD keeps keyboard focus even when another app is in front, so typed text would land in it.
-/// Hide it while typing into other apps, and bring it back (with the result) afterwards.
 func withHUDHidden<T>(_ body: () async throws -> T) async rethrows -> T {
     await MainActor.run { HUDController.shared.hide() }
     defer { Task { @MainActor in HUDController.shared.show() } }
     return try await body()
 }
 
-/// Chat row labels look like "Name, last message, time": the name is the part before the first comma.
 func chatTitle(_ label: String) -> String {
-    // apps like WhatsApp wrap text in invisible direction marks
     let clean = label.filter { !"\u{200E}\u{200F}\u{2066}\u{2067}\u{2068}\u{2069}".contains($0) }
     return String(clean.split(separator: ",", maxSplits: 1).first ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
-/// Chat buttons in the current view whose name matches. First the strict reading (query words match the title's
-/// first words, so "Start video call with X" does not count), then any-word matching. Best first, one entry per title.
 func chatMatches(_ query: String, in snap: Snapshot) -> [(head: String, node: Node, score: Double)] {
-    let rows = snap.visible().filter { $0.interactive && !$0.label.isEmpty && !AX.textual.contains($0.role) && !chatTitle($0.label).hasPrefix("Start ") } // not call buttons
+    let rows = snap.visible().filter { $0.interactive && !$0.label.isEmpty && !AX.textual.contains($0.role) && !chatTitle($0.label).hasPrefix("Start ") }
     for ordered in [true, false] {
         let hits = rows.map { (head: chatTitle($0.label), node: $0, score: nameScore(query, $0.label, ordered: ordered)) }.filter { $0.score >= 0.8 }
         let best = Dictionary(grouping: hits, by: { $0.head.lowercased() }).values
-            .compactMap { g in g.min { ($0.node.frame?.minX ?? .infinity) < ($1.node.frame?.minX ?? .infinity) } } // sidebar row, not the header
+            .compactMap { g in g.min { ($0.node.frame?.minX ?? .infinity) < ($1.node.frame?.minX ?? .infinity) } }
             .sorted { $0.score > $1.score }
         if !best.isEmpty { return best }
     }
@@ -163,7 +151,6 @@ func editDistance(_ a: String, _ b: String) -> Int {
     return a.isEmpty ? b.count : row[b.count]
 }
 
-/// 0...1: how well every word of `query` matches some word of the chat title (typos like Somaraj/Somraj score high).
 func nameScore(_ query: String, _ label: String, ordered: Bool = false) -> Double {
     func words(_ s: String) -> [String] { s.lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init) }
     let q = words(query), w = words(chatTitle(label))

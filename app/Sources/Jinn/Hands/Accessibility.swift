@@ -1,12 +1,10 @@
 import AppKit
 import ApplicationServices
 
-/// Thin wrapper over the native AX API. AX actions are delivered without activating the target app.
 enum AX {
     static let clickable: Set<String> = ["AXButton", "AXMenuItem", "AXCheckBox", "AXRadioButton", "AXLink", "AXPopUpButton", "AXTab", "AXMenuBarItem", "AXDisclosureTriangle"]
     static let textual: Set<String> = ["AXTextField", "AXTextArea", "AXComboBox", "AXSearchField"]
 
-    /// Human text for AX error codes (table from mac-cua app/_lib/errors.py).
     static func describe(_ e: AXError) -> String {
         switch e {
         case .success: return "ok"
@@ -22,7 +20,6 @@ enum AX {
         }
     }
 
-    /// One hung app must not freeze Jinn: cap every AX call (default is 6s) system-wide.
     static func configure() { AXUIElementSetMessagingTimeout(AXUIElementCreateSystemWide(), 1.5) }
 
     static func attr(_ e: AXUIElement, _ k: String) -> AnyObject? {
@@ -43,7 +40,6 @@ enum AX {
                                               kAXPlaceholderValueAttribute, kAXChildrenAttribute, kAXPositionAttribute, kAXSizeAttribute,
                                               kAXSubroleAttribute]
 
-    /// One IPC round trip for all attributes of an element (a per-attribute walk is ~8x slower). Errored attributes are omitted.
     static func batch(_ e: AXUIElement) -> [String: Any] {
         var out: CFArray?
         guard AXUIElementCopyMultipleAttributeValues(e, batchKeys as CFArray, AXCopyMultipleAttributeOptions(rawValue: 0), &out) == .success,
@@ -70,7 +66,6 @@ enum AX {
         return AXValueGetValue(unsafeBitCast(v as AnyObject, to: AXValue.self), .cgSize, &s) ? s : nil
     }
 
-    /// Focused window, else main, else first, else the app itself.
     static func window(_ app: AXUIElement) -> AXUIElement {
         for k in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] { if let w = attr(app, k) { return w as! AXUIElement } }
         if let ws = attr(app, kAXWindowsAttribute) as? [AXUIElement], let f = ws.first { return f }

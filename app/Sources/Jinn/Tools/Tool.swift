@@ -1,17 +1,13 @@
 import Foundation
 
-/// .safe runs freely; .confirm asks the HUD every call; .app(argKey) asks once per app named in that argument.
 enum Risk { case safe, confirm, app(String) }
 
-/// One callable tool. All params are strings; a "(optional)" description prefix marks it not required.
 struct Tool {
     let name: String
     let description: String
     var params: [String: String] = [:]
     var risk: Risk = .safe
-    /// Hard pre-check before any approval prompt: return a reason to refuse outright.
     var vet: (([String: Any]) -> String?)?
-    /// Outbound or argument-sensitive (shell, messages): asked on every call, never covered by Auto mode or a session grant.
     var alwaysAsk = false
     /// Per-call version of alwaysAsk: asked every time when this returns true for the call's arguments (e.g. the target looks like Send/Delete).
     var askIf: (([String: Any]) -> Bool)?
@@ -31,7 +27,6 @@ struct Tool {
 }
 
 extension Dictionary where Key == String, Value == Any {
-    /// String arg; objects/arrays (models sometimes send them unstringified) are re-serialized to JSON.
     func str(_ k: String) throws -> String {
         guard let v = self[k], !(v is NSNull) else { throw JinnError("missing arg: \(k)") }
         if let s = v as? String { return s }

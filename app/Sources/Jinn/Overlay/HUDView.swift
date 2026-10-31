@@ -17,7 +17,7 @@ final class HUDModel: ObservableObject {
     var lamp: LampState { listening ? .listening : busy ? .thinking : speaking ? .speaking : .idle }
 
     init() {
-        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in // flips as soon as the user grants it
+        Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in let t = !AXIsProcessTrusted(); if self?.needsAX != t { self?.needsAX = t } }
         }
         speech.onChange = { [weak self] on in self?.speaking = on }
@@ -45,7 +45,6 @@ final class HUDModel: ObservableObject {
         listening = false; dictation.cancel()
     }
 
-    /// Tap on the lamp: start listening, tap again to send what was heard.
     func toggleVoice() { listening ? finishListening() : startListening() }
 
     func decide(_ d: Decision) { pending = nil; answer?.resume(returning: d); answer = nil }
@@ -72,7 +71,6 @@ struct HUDView: View {
     @AppStorage("permMode") private var modeRaw = "ask"
     private let shade = Color.black.opacity(0.35)
 
-    /// No box: the lamp floats, text sits right under it, and a feathered blur patch (no edge) separates both from the desktop.
     var body: some View {
         VStack(spacing: 6) {
             LampView(state: m.lamp, build: m.buildTick) { m.toggleVoice() }

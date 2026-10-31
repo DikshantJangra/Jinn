@@ -5,26 +5,16 @@
 // before any commercial use of Jinn. Modified: "Agent!" in user-facing messages renamed to "Jinn".
 import Foundation
 
-/// / Hard local guardrail for shell commands — runs BEFORE every execution surface / and rejects catastrophic commands
-/// without dispatching them. Primary defense; / LLM system prompts are backstops, not the enforcement layer.
 enum ShellSafetyService {
 
-    /// Where the command is being dispatched from. `.rootDaemon` skips disk-write
-    /// rules because the daemon's whole reason for existing is privileged disk ops
-    /// (SD-card flashing, disk cloning, mkfs). Universally bad commands
-    /// (rm -rf /, fork bomb, mv to /dev/null) stay blocked everywhere.
     enum Context {
         case userAgent
         case rootDaemon
     }
 
     struct Verdict {
-        /// True when the command is permitted to run.
         let allowed: Bool
-        /// Human-readable explanation when blocked, suitable to return as a
-        /// tool result so the LLM understands why and doesn't retry.
         let reason: String?
-        /// Short identifier of the matched rule, for AuditLog.
         let rule: String?
 
         static let ok = Verdict(allowed: true, reason: nil, rule: nil)
@@ -34,18 +24,7 @@ enum ShellSafetyService {
         }
     }
 
-    /// / Inspect a shell command and return whether it's safe to dispatch. / Splits compound commands on shell
-    /// separators (`;`, `&&`, `||`, `|`, / newline) and checks each segment independently — so `ls; rm -rf /` / is blocked even though the first half is harmless.
-    ///
-    /// `projectFolder` is the agent's current working project. When set, a
-    /// recursive delete of that folder itself (or a glob of everything in it)
-    /// is refused — the agent must never wipe the project it's working in.
-    /// Deleting a named subdirectory inside it stays allowed.
     static func check(_ command: String, context: Context = .userAgent, projectFolder: String = "") -> Verdict {
-        // Root daemon: only block the three catastrophic rm patterns
-        // (rm -rf /, rm -rf *, rm -rf ~). Everything else — including system
-        // dirs, fork bombs, find -delete, mv to /dev/null — is the operator's
-        // call. The daemon exists to do system-level work; it shouldn't fight us.
         if context == .rootDaemon {
             for segment in splitOnShellSeparators(command) {
                 let trimmed = segment.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -55,9 +34,6 @@ enum ShellSafetyService {
             return .ok
         }
 
-        // User agent / in-process: full guardrail.
-        // Whole-command checks (fork bomb relies on `;` and `|` which are exactly what splitOnShellSeparators tears
-        // apart, so it has to run BEFORE splitting).
         let forkVerdict = checkForkBomb(command)
         if !forkVerdict.allowed { return forkVerdict }
 
@@ -70,11 +46,6 @@ enum ShellSafetyService {
         return .ok
     }
 
-    // MARK: - Root daemon — minimal rm guardrail
-
-    /// Only the three catastrophic `rm -rf` patterns the user explicitly
-    /// wants blocked even from root: `/`, `*`, and `~` (and close variants).
-    /// `rm -rf /etc`, `/usr`, etc. are allowed — the daemon is for system admin.
     private static func checkCatastrophicRm(_ command: String, projectFolder: String) -> Verdict? {
         let stripped = stripPrefixWrappers(command)
         let tokens = tokenize(stripped)
@@ -95,7 +66,6 @@ enum ShellSafetyService {
                 )
             }
             else if t.hasPrefix("--") {
-                // ignore other long flags
             } else if t.hasPrefix("-") && t.count >= 2 {
                 let chars = t.dropFirst()
                 if chars.contains("r") || chars.contains("R") { hasR = true }
@@ -124,23 +94,17 @@ enum ShellSafetyService {
         return nil
     }
 
-    /// The narrow catastrophic-rm matcher for the root daemon: only `/`, `*`, `~`
-    /// and their immediate variants. Everything else (including `/etc`, `/usr`,
-    /// `.`, `..`) is left to the operator.
     private static func catastrophicRmReason(_ target: String) -> String? {
         var t = target
         if (t.hasPrefix("\"") && t.hasSuffix("\"")) || (t.hasPrefix("'") && t.hasSuffix("'")) {
             t = String(t.dropFirst().dropLast())
         }
-        // /
         if t == "/" || t == "/*" || t == "/.*" || t == "/." || t == "/.." {
             return "this would erase the entire filesystem"
         }
-        // * (wild glob — expands to whatever the cwd happens to be)
         if t == "*" || t == "*.*" || t == "./*" || t == ".*" {
             return "this glob expands to every file in the current directory, which could be anywhere"
         }
-        // ~ (home, all written forms)
         let homeForms: Set<String> = [
             "~", "~/", "~/*", "~/.*",
             "$HOME", "${HOME}", "$HOME/", "${HOME}/",
@@ -156,44 +120,24 @@ enum ShellSafetyService {
         return nil
     }
 
-    // MARK: - Single segment
-
     private static func checkSingleSegment(_ command: String, context: Context, projectFolder: String) -> Verdict {
-        // This path only runs for `.userAgent`; `.rootDaemon` short-circuits in
-        // `check(_:context:)` to the minimal catastrophic-rm matcher.
         _ = context
 
-        // Strip leading sudo/exec wrappers so they can't disguise the payload.
         let stripped = stripPrefixWrappers(command)
         let tokens = tokenize(stripped)
         if tokens.isEmpty { return .ok }
 
-        // 1. rm -rf <dangerous-target>
         if let v = checkDangerousRm(tokens: tokens, projectFolder: projectFolder), !v.allowed { return v }
 
-        // 2. find <dangerous-root> ... -delete
         if let v = checkFindDelete(tokens: tokens), !v.allowed { return v }
 
-        // 3. chmod / chown -R against system roots
         if let v = checkRecursivePermsOnRoot(tokens: tokens), !v.allowed { return v }
 
-        // 4. (dd / mkfs / diskutil eraseDisk / > /dev/disk* are NOT blocked — they
-        // need root anyway, so they fail naturally on the user-agent path.
-        // The LLM is told to route disk writes through root_shell via the
-        // system prompt, not via a synthetic guardrail message.)
-
-        // 5. (fork bomb checked at the top of check() before splitting)
-
-        // 6. Move home/system to /dev/null
         if let v = checkMoveToDevNull(tokens: tokens), !v.allowed { return v }
 
         return .ok
     }
 
-    // MARK: - Rule: dangerous rm
-
-    /// / Tokenized rm check. We collect every flag (combined like `-rf`, / separated like `-r -f`, or long-form like
-    /// `--recursive --force`) and / every non-flag positional arg, then refuse the command if it has both / recursive AND force flags AND any positional that resolves to a / dangerous target.
     private static func checkDangerousRm(tokens: [String], projectFolder: String) -> Verdict? {
         guard let rmIdx = tokens.firstIndex(of: "rm") else { return nil }
         var hasR = false
@@ -206,14 +150,12 @@ enum ShellSafetyService {
             if t == "--recursive" || t == "--Recursive" { hasR = true }
             else if t == "--force" { hasF = true }
             else if t == "--no-preserve-root" {
-                // Only ever passed when someone explicitly wants to wipe /.
                 return .block(
                     reason: "Refused: `rm --no-preserve-root` is only used to bypass macOS/GNU's safeguard against deleting `/`. This command is permanently disabled in Jinn.",
                     rule: "rm.no-preserve-root"
                 )
             }
             else if t.hasPrefix("--") {
-                // Other long options — ignore.
             } else if t.hasPrefix("-") && t.count >= 2 {
                 let chars = t.dropFirst()
                 if chars.contains("r") || chars.contains("R") { hasR = true }
@@ -243,9 +185,6 @@ enum ShellSafetyService {
         return nil
     }
 
-    /// Reason when `target` would recursively delete the agent's current project
-    /// folder itself, or everything inside it. Returns nil for named
-    /// subdirectories — those are deliberate, scoped deletions.
     private static func projectFolderWipeReason(_ target: String, projectFolder: String) -> String? {
         let trimmed = projectFolder.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
@@ -260,7 +199,6 @@ enum ShellSafetyService {
         let normalized = expanded.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         guard !folder.isEmpty, !normalized.isEmpty else { return nil }
 
-        // The folder itself, or a glob of everything directly inside it.
         if normalized == folder
             || normalized == folder + "/*"
             || normalized == folder + "/.*"
@@ -270,41 +208,32 @@ enum ShellSafetyService {
         return nil
     }
 
-    /// / Returns a reason string when the path is too broad to ever be a / reasonable target for `rm -rf`. Returns nil
-    /// for safe targets so the / caller can keep checking the rest of the positionals.
     private static func dangerousRmTargetReason(_ target: String) -> String? {
-        // Strip surrounding quotes the tokenizer left intact.
         var t = target
         if (t.hasPrefix("\"") && t.hasSuffix("\"")) || (t.hasPrefix("'") && t.hasSuffix("'")) {
             t = String(t.dropFirst().dropLast())
         }
 
-        // Bare wildcard or current/parent dir — context-dependent but the
-        // worst-case is catastrophic, so we refuse.
         if t == "*" || t == "*.*" || t == "." || t == ".." || t == "./*" || t == "./" || t == ".*" {
             return "this glob/relative path is too broad — the working directory could be `/` or `~`"
         }
 
-        // Root and root-glob.
         if t == "/" || t == "/*" || t == "/.*" || t == "/." || t == "/.." {
             return "this would erase the entire filesystem"
         }
 
-        // Top-level system directories on macOS + Linux.
         let systemRoots: Set<String> = [
             "/etc", "/usr", "/bin", "/sbin", "/var", "/lib", "/lib64",
             "/boot", "/proc", "/sys", "/dev", "/run", "/opt",
             "/System", "/Library", "/Applications", "/private",
             "/Volumes", "/Network", "/cores", "/Users", "/home",
         ]
-        // Match exact and trailing-slash and `/dir/*` glob forms.
         for root in systemRoots {
             if t == root || t == root + "/" || t == root + "/*" || t == root + "/.*" {
                 return "this is a critical system directory"
             }
         }
 
-        // Home directory in any of its written forms.
         let homeForms: Set<String> = [
             "~", "~/", "~/*", "~/.*",
             "$HOME", "${HOME}", "$HOME/", "${HOME}/",
@@ -314,7 +243,6 @@ enum ShellSafetyService {
             return "this is your home directory"
         }
 
-        // The literal expanded home — best-effort match.
         let realHome = NSHomeDirectory()
         if t == realHome || t == realHome + "/" || t == realHome + "/*" {
             return "this is your home directory"
@@ -323,12 +251,9 @@ enum ShellSafetyService {
         return nil
     }
 
-    // MARK: - Rule: find -delete
-
     private static func checkFindDelete(tokens: [String]) -> Verdict? {
         guard tokens.contains("-delete") else { return nil }
         guard let findIdx = tokens.firstIndex(of: "find") else { return nil }
-        // The first positional after `find` is the search root.
         if findIdx + 1 < tokens.count {
             let root = tokens[findIdx + 1]
             if dangerousRmTargetReason(root) != nil {
@@ -340,8 +265,6 @@ enum ShellSafetyService {
         }
         return nil
     }
-
-    // MARK: - Rule: chmod/chown -R against system roots
 
     private static func checkRecursivePermsOnRoot(tokens: [String]) -> Verdict? {
         guard let cmdIdx = tokens.firstIndex(where: { $0 == "chmod" || $0 == "chown" }) else { return nil }
@@ -370,10 +293,7 @@ enum ShellSafetyService {
         return nil
     }
 
-    // MARK: - Rule: fork bomb
-
     private static func checkForkBomb(_ command: String) -> Verdict {
-        // The classic `:(){ :|:& };:` and minor variations.
         let collapsed = command.replacingOccurrences(of: " ", with: "")
         if collapsed.contains(":(){:|:&};:") || collapsed.contains(":(){:|:&};:&") {
             return .block(
@@ -384,14 +304,11 @@ enum ShellSafetyService {
         return .ok
     }
 
-    // MARK: - Rule: mv ~ /dev/null and friends
-
     private static func checkMoveToDevNull(tokens: [String]) -> Verdict? {
         guard tokens.first == "mv" else { return nil }
         guard tokens.contains("/dev/null") else { return nil }
-        // Look at every non-flag positional except the destination.
         let positionals = tokens.dropFirst().filter { !$0.hasPrefix("-") }
-        for t in positionals.dropLast() {  // dropLast = the destination /dev/null itself
+        for t in positionals.dropLast() {
             if dangerousRmTargetReason(t) != nil {
                 return .block(
                     reason: "Refused: moving `\(t)` to `/dev/null` is equivalent to deleting it permanently.",
@@ -402,9 +319,6 @@ enum ShellSafetyService {
         return nil
     }
 
-    // MARK: - Read-only classification (Tier 9.2)
-
-    /// Verbs that never mutate state. `git`/`find` get extra argument checks.
     private static let readOnlyVerbs: Set<String> = [
         "ls", "cat", "head", "tail", "less", "more", "grep", "egrep", "fgrep", "rg", "ag",
         "find", "fd", "wc", "echo", "printf", "pwd", "which", "whereis", "type", "file",
@@ -419,22 +333,13 @@ enum ShellSafetyService {
         "describe", "remote", "tag", "stash", "shortlog", "grep", "cat-file", "config",
     ]
 
-    /// True when every segment of `command` is a plain read (ls/cat/grep/git
-    /// status…), with no output redirection, command substitution, or
-    /// mutating flags. Lets the tool batcher run such shell calls in parallel
-    /// alongside file reads instead of serialising every `user_shell` call.
-    /// Conservative: anything unrecognised is NOT read-only.
     static func isReadOnly(_ command: String) -> Bool {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
-        // Substitution / heredocs can hide writes — bail.
         if trimmed.contains("$(") || trimmed.contains("`") || trimmed.contains("<<") { return false }
         for rawSegment in splitOnShellSeparators(trimmed) {
             let segment = stripPrefixWrappers(rawSegment)
-            // Backgrounded segment (`cmd &`) — can't observe its result, not a plain read.
             if segment.hasSuffix("&") { return false }
-            // A mid-segment `&` (e.g. `ls & rm -rf build`) isn't split by splitOnShellSeparators,
-            // so the second command would hide behind the read-only first verb.
             let withoutRedirects = segment
                 .replacingOccurrences(of: "2>&1", with: "")
                 .replacingOccurrences(of: "&>/dev/null", with: "")
@@ -442,7 +347,6 @@ enum ShellSafetyService {
             let tokens = tokenize(segment)
             guard let verb = tokens.first.map({ ($0 as NSString).lastPathComponent }) else { continue }
             guard readOnlyVerbs.contains(verb) else { return false }
-            // Output redirection writes a file — only stderr-to-null/stdout is fine.
             for t in tokens where t.contains(">") {
                 guard t == "2>/dev/null" || t == "2>&1" || t == ">/dev/null" || t == "&>/dev/null" else { return false }
             }
@@ -476,10 +380,6 @@ enum ShellSafetyService {
         return true
     }
 
-    // MARK: - Helpers
-
-    /// Strip leading `sudo` and `exec` (and chains thereof) so an attacker
-    /// can't disguise `rm -rf /` as `sudo exec sudo rm -rf /`.
     private static func stripPrefixWrappers(_ command: String) -> String {
         var result = command.trimmingCharacters(in: .whitespacesAndNewlines)
         let prefixes = ["sudo ", "exec ", "command ", "builtin ", "eval ", "doas "]
@@ -490,7 +390,6 @@ enum ShellSafetyService {
                 result = String(result.dropFirst(prefix.count)).trimmingCharacters(in: .whitespacesAndNewlines)
                 changed = true
             }
-            // Also strip env-var assignments at the start, like `FOO=bar rm -rf /`.
             if let space = result.firstIndex(of: " "),
                result[..<space].contains("="),
                !result[..<space].contains("/")
@@ -503,8 +402,6 @@ enum ShellSafetyService {
         return result
     }
 
-    /// Whitespace tokenizer that preserves quoted substrings as a single
-    /// token. Good enough for safety classification — not a full bash parser.
     private static func tokenize(_ command: String) -> [String] {
         var tokens: [String] = []
         var current = ""
@@ -545,8 +442,6 @@ enum ShellSafetyService {
         return tokens
     }
 
-    /// Split a command on shell separators so each side of `;`/`&&`/`||`/`|`
-    /// gets independently classified. Quoted strings are preserved.
     private static func splitOnShellSeparators(_ command: String) -> [String] {
         var segments: [String] = []
         var current = ""
@@ -559,7 +454,6 @@ enum ShellSafetyService {
             if ch == "\"" && !inSingle { inDouble.toggle(); current.append(ch); i = command.index(after: i); continue }
             if !inSingle && !inDouble {
                 let next = command.index(after: i)
-                // && or ||
                 if next < command.endIndex {
                     let two = String(command[i...next])
                     if two == "&&" || two == "||" {

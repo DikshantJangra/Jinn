@@ -1,7 +1,6 @@
 import AppKit
 
 enum Shell {
-    /// A hung target app (osascript waits on it) must not stall the agent forever.
     static func run(_ exe: String, _ args: [String], timeout: TimeInterval = 60) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
@@ -25,7 +24,6 @@ enum Shell {
 }
 
 extension Shell {
-    /// Runs a zsh command line from $HOME with a timeout; stdout+stderr merged, capped. Callers must vet the command (Safety.shell).
     static func sh(_ cmd: String, timeout: TimeInterval = 30) throws -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/zsh")

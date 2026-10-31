@@ -1,22 +1,15 @@
-// Delivery details (per-char keycode typing with unicode fallback, compound modifier flags, mouse event
-// decoration with window hints, no mouse-move events) follow mac-cua app/_lib/input.py, Apache License 2.0.
 import AppKit
 
-/// Synthetic input delivered to one process (postToPid), never to the global stream: the user's cursor and
-/// keyboard are untouched. A private event source keeps our modifier state out of the system's.
 enum Input {
-    /// Tagged on every event we post, so the interruption tap can tell ours from the user's.
     static let marker: Int64 = 0x4A494E4E
     private static let src = CGEventSource(stateID: .privateState)
     private static var eventNumber: Int64 = 0
 
     private static func post(_ e: CGEvent, _ pid: pid_t) {
         e.setIntegerValueField(.eventSourceUserData, value: marker)
-        if pid == 0 { e.post(tap: .cghidEventTap) } else { e.postToPid(pid) } // pid 0: the focused app, for apps that ignore pid-targeted keys
+        if pid == 0 { e.post(tap: .cghidEventTap) } else { e.postToPid(pid) }
     }
 
-    /// Modifiers ride on the key events as flags; separate flagsChanged events posted to a pid leak into the
-    /// user's global modifier state (mac-cua finding).
     static func key(_ pid: pid_t, _ code: CGKeyCode, flags: CGEventFlags = []) async {
         for down in [true, false] {
             guard let e = CGEvent(keyboardEventSource: src, virtualKey: code, keyDown: down) else { continue }
@@ -37,15 +30,12 @@ enum Input {
         }
     }
 
-    /// Real key codes where the ANSI layout has one (apps that read key codes, e.g. Electron, then see real keys);
-    /// unicode events for everything else (emoji, accents).
     static func type(_ pid: pid_t, _ text: String) async {
         for c in text {
             if let k = Keys.forChar(c) { await key(pid, k.code, flags: k.flags) } else { await unicode(pid, c) }
         }
     }
 
-    /// On-screen window of `pid` under `p` (layer 0); used as the routing hint for background clicks.
     static func windowID(_ pid: pid_t, at p: CGPoint) -> Int64? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowOwnerPID as String] as? pid_t) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
@@ -57,7 +47,6 @@ enum Input {
         return nil
     }
 
-    /// No mouse-move pre-positioning: a moved event posted to a pid moves the visible cursor.
     static func click(_ pid: pid_t, at p: CGPoint, right: Bool = false, count: Int = 1) async {
         let (down, up, btn): (CGEventType, CGEventType, CGMouseButton) = right ? (.rightMouseDown, .rightMouseUp, .right) : (.leftMouseDown, .leftMouseUp, .left)
         let win = windowID(pid, at: p)

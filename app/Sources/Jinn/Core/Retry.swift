@@ -1,6 +1,5 @@
 import Foundation
 
-/// Exponential backoff for flaky OS calls (AX trees right after launch, etc).
 func retry<T>(_ attempts: Int = 3, base: Double = 0.15, _ body: () async throws -> T) async throws -> T {
     var delay = base
     for i in 1...attempts {
@@ -14,7 +13,6 @@ func retry<T>(_ attempts: Int = 3, base: Double = 0.15, _ body: () async throws 
     fatalError("unreachable")
 }
 
-/// Runs `op`, failing with `what` timed out after `seconds`. The losing task is cancelled.
 func withTimeout<T: Sendable>(_ seconds: Double, _ what: String, _ op: @escaping @Sendable () async throws -> T) async throws -> T {
     try await withThrowingTaskGroup(of: T.self) { g in
         g.addTask { try await op() }

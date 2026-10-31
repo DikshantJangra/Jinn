@@ -3,10 +3,8 @@ import Foundation
 let appTools: [Tool] = [
     Tool(name: "open_app", description: "Open a Mac app by name, e.g. WhatsApp, Mail, Safari. Brought to front unless background is true.",
          params: ["name": "App name", "background": "(optional) true to launch without taking focus, when you only need to drive it"]) { a in
-        // -g: launch without activating (mac-cua launches background-first so the user keeps focus)
         let name = try a.str("name")
         try Apps.launch(name, background: a.opt("background") == "true")
-        // wait up to 5s until registered, so an immediate app_state finds it
         for _ in 0..<25 where (try? Apps.resolve(name)) == nil { try await Task.sleep(nanoseconds: 200_000_000) }
         return "Opened \(name)."
     },

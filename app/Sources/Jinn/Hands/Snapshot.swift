@@ -12,14 +12,12 @@ struct Node {
     let el: AXUIElement
     var subrole = ""
 
-    /// Password fields: Jinn never types into or reads them.
     var secure: Bool { subrole == "AXSecureTextField" || role == "AXSecureTextField" }
 
     var interactive: Bool { AX.clickable.contains(role) || AX.textual.contains(role) || actions.contains("AXPress") }
     var center: CGPoint? { frame.map { CGPoint(x: $0.midX, y: $0.midY) } }
 }
 
-/// A frozen, indexed view of one app window. Indices are valid only for the snapshot that produced them.
 final class Snapshot {
     let pid: pid_t, app: String, bundle: String, window: String
     let nodes: [Node]
@@ -33,7 +31,6 @@ final class Snapshot {
     private static var latest: [pid_t: Snapshot] = [:]
     static func latest(_ pid: pid_t) -> Snapshot? { lock.withLock { latest[pid] } }
 
-    /// Walks the window depth-first (document order), stores the result as the app's latest snapshot.
     @discardableResult
     static func take(_ app: NSRunningApplication) async throws -> Snapshot {
         guard AXIsProcessTrusted() else { throw JinnError.permission("Accessibility") }
@@ -47,7 +44,7 @@ final class Snapshot {
         let snap = try await retry(3, base: 0.3) { () -> Snapshot in
             let root = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(root, 2)
-            AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, true as CFBoolean) // wakes Electron/Chromium trees
+            AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, true as CFBoolean)
             let win = AX.window(root)
             var nodes: [Node] = []
             var stack: [(AXUIElement, Int)] = [(win, 0)]
@@ -62,7 +59,7 @@ final class Snapshot {
                 if let p = AX.point(b[kAXPositionAttribute]), let s = AX.size(b[kAXSizeAttribute]) { frame = CGRect(origin: p, size: s) }
                 let interactive = AX.clickable.contains(role) || AX.textual.contains(role)
                 let subrole = b[kAXSubroleAttribute] as? String ?? ""
-                if subrole == "AXSecureTextField" { value = "" } // never surface password contents
+                if subrole == "AXSecureTextField" { value = "" }
                 nodes.append(Node(index: nodes.count, depth: d, role: role, label: label, value: value, frame: frame,
                                   actions: interactive ? AX.actions(e) : [], el: e, subrole: subrole))
                 if d < 40 { for c in ((b[kAXChildrenAttribute] as? [AXUIElement]) ?? []).reversed() { stack.append((c, d + 1)) } }
@@ -84,8 +81,6 @@ final class Snapshot {
         return s
     }
 
-    /// Pruned text for the model: interactive elements first, then labeled text, until the character budget is spent.
-    /// Unlabeled containers are dropped. Output stays in document order and keeps original indices.
     func render(budget: Int = 6000) -> String {
         let ranked = visible().compactMap { n -> (Node, Int)? in
             n.interactive ? (n, 2) : (!n.label.isEmpty || !n.value.isEmpty ? (n, 1) : nil)
@@ -103,7 +98,6 @@ final class Snapshot {
         return out
     }
 
-    /// Ancestors nearest-first, derived from preorder + depth.
     func ancestors(of index: Int) -> [Node] {
         guard nodes.indices.contains(index) else { return [] }
         var out: [Node] = [], depth = nodes[index].depth
@@ -113,15 +107,12 @@ final class Snapshot {
         return out
     }
 
-    /// Nodes as the model sees them (merged labels), hidden ones removed.
     func visible() -> [Node] {
         var n = nodes
         let hidden = Prune.apply(&n)
         return n.filter { !hidden.contains($0.index) }
     }
 
-    /// Finds the same element in a fresh snapshot after the old one went stale (ported from mac-cua refetchable_tree.py):
-    /// match by role + label; several matches are resolved by closest position, ties are an error.
     static func refetch(_ old: Node, in new: Snapshot) -> Result<Node, JinnError> {
         let m = new.nodes.filter { $0.role == old.role && $0.label == old.label }
         if m.count == 1 { return .success(m[0]) }
@@ -132,7 +123,6 @@ final class Snapshot {
         return .failure(JinnError("[\(old.index)] \"\(old.label)\" is ambiguous after the UI changed; call app_state again"))
     }
 
-    /// What changed between two snapshots of the same app: the verification signal returned after every action.
     static func diff(_ old: Snapshot?, _ new: Snapshot) -> String {
         guard let old else { return "" }
         func bag(_ s: Snapshot) -> [String: Int] {

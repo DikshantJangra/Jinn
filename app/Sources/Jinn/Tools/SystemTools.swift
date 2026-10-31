@@ -1,15 +1,12 @@
 import AppKit
 
-/// Opening these can run code; the model may not do it (the user can).
 private let runnable: Set<String> = ["app", "command", "sh", "zsh", "bash", "terminal", "pkg", "mpkg", "dmg", "scpt", "scptd", "workflow", "action", "jar", "tool", "webloc", "url",
                                      "fileloc", "inetloc", "prefpane", "shortcut", "plist", "py", "rb", "pl", "php", "js", "command", "service", "saver", "kext", "dylib", "so"]
-/// Safe to hand to the default app. Source/script files (below) only open in an app the caller names.
 private let documents: Set<String> = ["txt", "md", "pdf", "doc", "docx", "pages", "xls", "xlsx", "numbers", "csv", "ppt", "pptx", "key", "rtf", "json", "xml", "yaml", "yml", "toml",
                                       "html", "htm", "css", "log", "png", "jpg", "jpeg", "gif", "heic", "webp", "svg", "mp3", "mp4", "mov", "wav", "m4a", "zip"]
 private let sourceCode: Set<String> = ["py", "js", "ts", "tsx", "jsx", "swift", "go", "rs", "java", "c", "h", "cpp", "rb", "php", "sql", "sh", "plist"]
 private let deniedApps = ["terminal", "iterm", "script editor", "automator", "python launcher", "shortcuts", "xcode"]
 
-/// Destinations of write/copy/move may not be runnable types (same policy as open_file), so a rename cannot launder one.
 func vetWrite(_ path: String) throws {
     let ext = (path as NSString).pathExtension.lowercased()
     if runnable.contains(ext) && !sourceCode.contains(ext) { throw JinnError.blocked(".\(ext) files can run code; will not create one") }

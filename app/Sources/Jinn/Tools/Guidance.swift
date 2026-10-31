@@ -1,4 +1,3 @@
-/// Operational hints per app bundle id, appended to app_state so a small model knows each app's quirks.
 let appGuidance: [String: String] = [
     "net.whatsapp.whatsapp": "To message someone: app_state, click the Search field (or press_key cmd+f), type_text the contact name, click the matching chat, app_state again. Then type_text the message into the message box and press_key Return only after the user has confirmed the text. If set_value fails, use type_text.",
     "com.apple.mail": "Prefer read_unread_mail / draft_mail tools over driving the UI.",

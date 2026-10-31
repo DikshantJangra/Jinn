@@ -2,9 +2,6 @@ import AppKit
 import Foundation
 
 enum Web {
-    /// nil = fine to request. Public http(s) only: the model must not be able to probe the local network.
-    /// The host is resolved and every address checked (numeric, short and hex forms included); redirects are re-checked.
-    /// ponytail: the connection re-resolves, so a DNS-rebinding race remains; pin the vetted IP if that matters.
     static func vet(_ s: String) -> String? {
         guard let u = URL(string: s), ["http", "https"].contains(u.scheme?.lowercased() ?? ""), let h = u.host?.lowercased()
         else { return "need a full http(s) URL" }
@@ -44,7 +41,6 @@ enum Web {
         }
     }
 
-    /// Re-vets every redirect hop.
     private final class NoPrivateRedirects: NSObject, URLSessionTaskDelegate {
         func urlSession(_ s: URLSession, task: URLSessionTask, willPerformHTTPRedirection r: HTTPURLResponse, newRequest q: URLRequest,
                         completionHandler done: @escaping (URLRequest?) -> Void) {
@@ -52,7 +48,6 @@ enum Web {
         }
     }
 
-    /// The URL argument, or a thrown refusal. Checked again here so no caller can skip `vet`.
     static func url(_ a: [String: Any]) throws -> URL {
         let s = try a.str("url")
         if let why = vet(s) { throw JinnError.blocked(why) }
@@ -69,7 +64,6 @@ enum Web {
         return (d, h, Int(Date().timeIntervalSince(t0) * 1000))
     }
 
-    /// Readable text from HTML: scripts, styles and tags dropped, entities decoded, whitespace collapsed.
     static func text(_ html: String) -> String {
         var s = html
         for p in [#"(?is)<(script|style|noscript|svg)[^>]*>.*?</\1>"#, #"(?s)<!--.*?-->"#, #"(?s)<[^>]+>"#] {
@@ -83,7 +77,6 @@ enum Web {
             .reduce(s) { $0.replacingOccurrences(of: $1.0, with: $1.1) }
     }
 
-    /// DuckDuckGo's HTML endpoint: no key, no account. Result links are direct or wrapped in a /l/?uddg= redirect.
     static func search(_ q: String, limit: Int) async throws -> String {
         var c = URLComponents(string: "https://html.duckduckgo.com/html/")!
         c.queryItems = [URLQueryItem(name: "q", value: q)]
@@ -127,7 +120,7 @@ let webTools: [Tool] = [
         let u = try Web.url(a)
         do {
             var (_, h, ms) = try await Web.request(u, method: "HEAD")
-            if h.statusCode == 405 || h.statusCode == 403 { (_, h, ms) = try await Web.request(u) } // some servers refuse HEAD
+            if h.statusCode == 405 || h.statusCode == 403 { (_, h, ms) = try await Web.request(u) }
             return "\(u.host ?? "site") is up: HTTP \(h.statusCode) in \(ms) ms"
         } catch { return "\(u.host ?? "site") is unreachable: \(error.localizedDescription)" }
     },
