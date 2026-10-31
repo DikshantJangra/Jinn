@@ -38,5 +38,9 @@ def my_func():
             self.assertIn("my_func", analysis["functions"])
             self.assertEqual(len(analysis["imports"]), 2)
 
+    def test_analyze_missing_file(self):
+        res = LocalToolKit.analyze_python_file("non_existent_file.py")
+        self.assertIn("error", res)
+
 if __name__ == "__main__":
     unittest.main()
