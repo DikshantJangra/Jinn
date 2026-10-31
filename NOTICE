@@ -1,0 +1,31 @@
+Jinn
+
+== mac-cua (Apache License 2.0) ==
+https://github.com/hyprcat/mac-cua
+Jinn's macOS "hands" layer follows mac-cua's design. These Swift files are ports of mac-cua Python modules:
+  app/Sources/Jinn/Hands/Prune.swift      (app/_lib/pruning.py)
+  app/Sources/Jinn/Hands/Snapshot.swift   (refetch logic from app/_lib/refetchable_tree.py)
+  app/Sources/Jinn/Hands/Keys.swift       (app/_lib/keys.py, full key map)
+  app/Sources/Jinn/Hands/Input.swift      (delivery rules from app/_lib/input.py)
+  app/Sources/Jinn/Hands/Click.swift      (click strategy from app/session.py)
+  app/Sources/Jinn/Hands/Accessibility.swift (AX error table from app/_lib/errors.py)
+  app/Sources/Jinn/Hands/Interrupt.swift  (UserInteractionMonitor in app/_lib/focus.py)
+  app/Sources/Jinn/Core/Safety.swift      (app blocklist from app/_lib/safety.py)
+Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0).
+
+== Agent! (PolyForm Noncommercial License 1.0.0) -- NONCOMMERCIAL ONLY ==
+https://github.com/macos26/Agent
+Required Notice: Copyright (c) 2026 AgentiLoop.ai, a Logos InkPen LLC company (https://AgentiLoop.ai)
+Licensed under the PolyForm Noncommercial License 1.0.0 (https://polyformproject.org/licenses/noncommercial/1.0.0).
+These files contain Agent! code and are NOT under Jinn's MIT license:
+  app/Sources/Jinn/Core/ShellSafetyService.swift   (copied, "Agent!" renamed in messages)
+  app/Sources/Jinn/Brain/TextToolCalls.swift       (adapted from OllamaService.swift)
+A build of Jinn that includes them may be used and distributed for noncommercial purposes only. To use Jinn
+commercially, delete those two files and the calls to them (Safety.shell, OllamaClient.chat) and replace
+them with original code. All other Agent! ideas (history compaction, provider split, stall escalation)
+were reimplemented independently, as were Ollama keep_alive/num_ctx and the stop-reason nudges in
+AgentLoop.swift (ideas from OllamaService.swift and LoopControl.swift, no code copied).
+
+== three.js r128 (MIT) ==
+app/Resources/lamp/three.min.js is three.js r128, Copyright 2010-2021 Three.js Authors, MIT License (https://threejs.org).
+app/Resources/lamp/lamp.html is the voxel Genie & Lamp scene (model data and renderer) taken from "Voxel Genie Lamp Animation.html".

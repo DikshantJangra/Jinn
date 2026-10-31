@@ -1,4 +1,4 @@
-# 🧞 Jinn — Autonomous Local AI Powered by Google Gemma
+# Jinn — Autonomous Local AI Powered by Google Gemma
 
 [![CI Pipeline](https://github.com/DikshantJangra/Jinn/actions/workflows/ci.yml/badge.svg)](https://github.com/DikshantJangra/Jinn/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -13,7 +13,7 @@
 
 ---
 
-## 📖 Overview
+## Overview
 
 **Jinn** is an autonomous local AI application engineered specifically to harness the power of **Google Gemma** running 100% locally on laptops.
 
@@ -21,7 +21,7 @@ Designed as an intelligent offline genie, Jinn transforms high-level developer a
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 - **100% Local Inference:** Powered by Google Gemma (Gemma 2 2B / 9B, CodeGemma) running on-device via Ollama, llama.cpp, or MLX.
 - **Zero Cloud Egress & Absolute Privacy:** Code, proprietary files, and sensitive prompts never leave your laptop.
@@ -31,30 +31,30 @@ Designed as an intelligent offline genie, Jinn transforms high-level developer a
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 flowchart TD
-    User([💻 Developer / User]) -->|CLI / Script Command| CLI[jinn CLI / Interface]
-    CLI --> Agent[Jinn Autonomous Agent]
+    User(["Developer / User"]) -->|CLI / Script Command| CLI["jinn CLI / Interface"]
+    CLI --> Agent["Jinn Autonomous Agent"]
     
-    subgraph Local Laptop Boundary
-        Agent --> Engine[Gemma Local Engine]
-        Engine <-->|Localhost HTTP / IPC| Gemma[Google Gemma\n(Ollama / llama.cpp / GGUF)]
+    subgraph "Local Laptop Boundary"
+        Agent --> Engine["Gemma Local Engine"]
+        Engine <-->|Localhost HTTP / IPC| Gemma["Google Gemma\n(Ollama / llama.cpp / GGUF)"]
         
-        Agent --> Tools[Local Tool Execution]
-        Tools --> FInspect[File & Workspace Inspector]
-        Tools --> CAnalyze[Python Code & AST Analyzer]
-        Tools --> Telemetry[System Privacy & Telemetry Guard]
+        Agent --> Tools["Local Tool Execution"]
+        Tools --> FInspect["File & Workspace Inspector"]
+        Tools --> CAnalyze["Python Code & AST Analyzer"]
+        Tools --> Telemetry["System Privacy & Telemetry Guard"]
     end
     
-    Tools --> Outputs[Structured JSON & Markdown Reports]
+    Tools --> Outputs["Structured JSON & Markdown Reports"]
     Outputs --> User
 ```
 
 ---
 
-## 🚀 Quickstart & Installation
+## Quickstart & Installation
 
 ### 1. Prerequisites
 - Python 3.9 or higher
@@ -77,7 +77,7 @@ pip install -e .
 
 ---
 
-## 💻 Execution Instructions
+## Execution Instructions
 
 ### CLI Usage
 
@@ -105,7 +105,7 @@ python3 examples/demo_run.py
 
 ---
 
-## 🧪 Automated Testing & CI
+## Automated Testing & CI
 
 Jinn includes automated unit tests covering prompts, tool dispatch, fallback resilience, and the autonomous agent loop:
 
@@ -121,7 +121,7 @@ All pushes and pull requests to `main` are automatically verified through the [C
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```
 Jinn/
@@ -157,7 +157,7 @@ Jinn/
 
 ---
 
-## 👥 Team Details
+## Team Details
 
 - **Team Name:** Jinn
 - **Members:**
@@ -170,6 +170,6 @@ Jinn/
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
