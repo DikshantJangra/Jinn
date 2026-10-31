@@ -25,3 +25,7 @@ commercially, delete those two files and the calls to them (Safety.shell, Ollama
 them with original code. All other Agent! ideas (history compaction, provider split, stall escalation)
 were reimplemented independently, as were Ollama keep_alive/num_ctx and the stop-reason nudges in
 AgentLoop.swift (ideas from OllamaService.swift and LoopControl.swift, no code copied).
+
+== three.js r128 (MIT) ==
+app/Resources/lamp/three.min.js is three.js r128, Copyright 2010-2021 Three.js Authors, MIT License (https://threejs.org).
+app/Resources/lamp/lamp.html is the voxel Genie & Lamp scene (model data and renderer) taken from "Voxel Genie Lamp Animation.html".

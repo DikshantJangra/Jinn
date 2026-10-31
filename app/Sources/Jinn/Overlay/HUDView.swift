@@ -7,11 +7,15 @@ final class HUDModel: ObservableObject {
     @Published var trace: [String] = []
     @Published var busy = false
     @Published var listening = false
+    @Published var speaking = false
     @Published var focusTick = 0
     @Published var pending: ConfirmRequest?
     private var answer: CheckedContinuation<Decision, Never>?
 
+    var lamp: LampState { listening ? .listening : busy ? .thinking : speaking ? .speaking : .idle }
+
     init() {
+        speech.onChange = { [weak self] on in self?.speaking = on }
         agent.confirm = { [weak self] req in await self?.ask(req) ?? .deny }
     }
 
@@ -19,6 +23,16 @@ final class HUDModel: ObservableObject {
         speech.stop()
         HUDController.shared.show()
         return await withCheckedContinuation { c in pending = req; answer = c }
+    }
+
+    /// Tap on the lamp: start listening, tap again to send what was heard.
+    func toggleVoice() {
+        if listening {
+            listening = false
+            Task { submit(await dictation.stop()) }
+        } else {
+            speech.stop(); listening = true; dictation.start()
+        }
     }
 
     func decide(_ d: Decision) { pending = nil; answer?.resume(returning: d); answer = nil }
@@ -44,6 +58,19 @@ struct HUDView: View {
     @FocusState private var focused: Bool
 
     var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            LampView(state: m.lamp) { m.toggleVoice() }
+                .frame(width: 112, height: 112)
+                .help("Tap the lamp to talk. Drag to turn it.")
+            content
+        }
+        .padding(10)
+        .frame(width: 440)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .onChange(of: m.focusTick) { _ in focused = true }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Image(systemName: m.listening ? "waveform" : "wand.and.stars").foregroundStyle(.secondary)
@@ -75,9 +102,7 @@ struct HUDView: View {
                 }.font(.caption)
             }
         }
-        .padding(14)
-        .frame(width: 440)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .onChange(of: m.focusTick) { _ in focused = true }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.top, 6)
     }
 }

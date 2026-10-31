@@ -189,6 +189,10 @@ func selfTest() {
     let tie = snap([n(0, 0, "AXButton", "Send", frame: CGRect(x: 100, y: 101, width: 10, height: 10)), n(1, 0, "AXButton", "Send", frame: CGRect(x: 100, y: 99, width: 10, height: 10))])
     precondition((try? Snapshot.refetch(old, in: tie).get()) == nil)
 
+    // lamp face: page, model and local three.js all present (offline)
+    for f in ["lamp.html", "three.min.js"] { precondition(FileManager.default.fileExists(atPath: lampDir.appendingPathComponent(f).path), f) }
+    precondition(LampState(rawValue: "thinking") != nil)
+
     // text tool calls (adapted from Agent!)
     let names = allTools.map(\.name)
     let tc = TextToolCalls.first(in: "Sure. list_dir {\"path\": \"~/Downloads\"} done", names: names)
