@@ -7,6 +7,7 @@ Zero external library dependencies required.
 
 import json
 import logging
+import os
 import urllib.request
 import urllib.error
 from typing import Optional, Dict, Any
@@ -16,12 +17,12 @@ logger = logging.getLogger(__name__)
 class GemmaLocalEngine:
     def __init__(
         self,
-        model_name: str = "gemma4:e4b",
+        model_name: Optional[str] = None,
         endpoint: str = "http://localhost:11434/api/generate",
         timeout: int = 180,
         fallback_mode: bool = False
     ):
-        self.model_name = model_name
+        self.model_name = model_name or os.environ.get("JINN_MODEL", "gemma4:e4b")
         self.endpoint = endpoint
         self.timeout = timeout
         self.fallback_mode = fallback_mode
@@ -73,7 +74,6 @@ class GemmaLocalEngine:
             except Exception as e:
                 logger.warning(f"Local endpoint call failed: {e}. Switching to local fallback mode.")
 
-        # Local deterministic fallback simulation for testing/standalone environments
         return self._fallback_generate(prompt)
 
     def _fallback_generate(self, prompt: str) -> Dict[str, Any]:

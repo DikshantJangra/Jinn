@@ -4,7 +4,6 @@ struct OpenAICompatClient: Brain {
     var model: String
     let base: URL
 
-    /// Internal (Ollama-shaped) history -> OpenAI wire format. Tool calls get synthetic ids matched to the replies that follow.
     func wire(_ messages: [Msg]) -> [Msg] {
         var out: [Msg] = [], pending: [String] = [], n = 0
         for m in messages {

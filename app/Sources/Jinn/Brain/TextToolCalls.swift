@@ -5,9 +5,7 @@
 // This file is NOT covered by Jinn's MIT license: noncommercial use only. Delete it and its call in OllamaClient before commercial use.
 import Foundation
 
-/// Local models sometimes write a tool call as plain text (`list_dir {"path":"~"}`) instead of using native tool_calls.
 enum TextToolCalls {
-    /// First balanced `{...}` object at the start of `text`.
     static func firstJSON(_ text: String) -> [String: Any]? {
         var depth = 0, inString = false, escape = false
         var end: String.Index?
@@ -24,7 +22,6 @@ enum TextToolCalls {
         return (try? JSONSerialization.jsonObject(with: Data(text[text.startIndex..<end].utf8))) as? [String: Any]
     }
 
-    /// Earliest known tool name followed (within 20 chars of junk) by a JSON object.
     static func first(in text: String, names: [String]) -> ToolCall? {
         var best: (ToolCall, String.Index)?
         for name in names {

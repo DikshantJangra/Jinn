@@ -8,28 +8,24 @@ private struct Target {
     let node: Node
 }
 
-/// Resolves app + element against the latest snapshot. `element` is an index from app_state; `label` is a fuzzy fallback for weak models.
 private func target(_ a: [String: Any]) async throws -> Target {
     let app = try Apps.resolve(try a.str("app"))
     var snap = Snapshot.latest(app.processIdentifier)
     if let i = Int(a.opt("element")) {
         guard let s = snap, s.nodes.indices.contains(i) else { throw JinnError.stale(app.localizedName ?? "app") }
         if AX.alive(s.nodes[i].el) { return Target(app: app, before: s, node: s.nodes[i]) }
-        let fresh = try await Snapshot.take(app) // element died: re-find the same role+label in a fresh tree
+        let fresh = try await Snapshot.take(app)
         return Target(app: app, before: fresh, node: try Snapshot.refetch(s.nodes[i], in: fresh).get())
     }
     let label = a.opt("label").lowercased()
     guard !label.isEmpty else { throw JinnError("give element (index from app_state) or label") }
     snap = try await Snapshot.take(app)
-    // match what the model was shown (pruned, merged labels), not the raw tree
     let hits = snap!.visible().filter { !$0.label.isEmpty && $0.label.lowercased().contains(label) }
     guard let n = hits.first(where: { $0.label.lowercased() == label && $0.interactive }) ?? hits.first(where: { $0.interactive }) ?? hits.first
     else { throw JinnError("no element matching '\(label)'; call app_state to see what is there") }
     return Target(app: app, before: snap, node: n)
 }
 
-/// Settle, re-snapshot, and report what changed. The action already happened, so a failed read-back is reported, not thrown.
-/// ponytail: fixed 300ms settle; AXObserver-based settling if apps lag.
 private func observe(_ app: NSRunningApplication, since before: Snapshot?) async -> String {
     try? await Task.sleep(nanoseconds: 300_000_000)
     do { return Snapshot.diff(before, try await Snapshot.take(app)) }
@@ -40,7 +36,6 @@ private func finish(_ msg: String, _ t: Target, busy: Bool) async throws -> Stri
     msg + Interrupt.note(busy) + "\n" + (await observe(t.app, since: t.before))
 }
 
-/// The app's focused element is a password field (checked live, typing without a target goes there).
 private func focusedIsSecure(_ app: NSRunningApplication) -> Bool {
     let root = AXUIElementCreateApplication(app.processIdentifier)
     guard let f = AX.attr(root, kAXFocusedUIElementAttribute) else { return false }
@@ -60,7 +55,6 @@ let axTools: [Tool] = [
         if app.bundleIdentifier?.lowercased().hasPrefix("com.google.chrome") == true, let page = try? await Chrome.eval(Chrome.page) {
             return "Chrome page: " + page
         }
-        // thin or missing tree (canvas, games, some Electron apps): read the pixels instead
         func ocr(_ why: String) async throws -> String {
             let (_, items) = try await Screen.read(app)
             return "\(why) Text on the window by OCR (use click_text / click_at):\n" + Screen.render(items)
@@ -109,7 +103,6 @@ let axTools: [Tool] = [
         if t?.node.secure == true || (t == nil && focusedIsSecure(app)) { throw JinnError.blocked("Jinn does not type into password fields; ask the user to type it") }
         let busy = try await Interrupt.waitIdle(pid: app.processIdentifier)
         if let t { AXUIElementSetAttributeValue(t.node.el, kAXFocusedAttribute as CFString, true as CFBoolean) }
-        // search boxes keep the last query; typing would append to it
         if let t, t.node.subrole == "AXSearchField" || t.node.label.lowercased().contains("search") {
             await Input.key(app.processIdentifier, 0, flags: .maskCommand); await Input.key(app.processIdentifier, 51)
         }

@@ -11,7 +11,6 @@ struct JinnError: Error, LocalizedError {
     static let declined = JinnError("the user declined this action")
 }
 
-/// Error text for the model and the user; macOS folder-privacy denials say how to fix them.
 func explain(_ e: Error) -> String {
     let ns = e as NSError
     if ns.domain == NSCocoaErrorDomain, [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(ns.code) {
