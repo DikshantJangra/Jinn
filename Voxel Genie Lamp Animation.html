@@ -1,0 +1,398 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<meta name="claude:viewport-fit-sides" content="cover">
+<title>Voxel Genie Lamp</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: full-bleed voxel stage; header top-left, floating control dock bottom-center. */
+:root{
+  --bg0:#070b14; --bg1:#132545; --fg:#e8eff7; --muted:#8ea3bd;
+  --accent:#36c1ff; --gold:#ffc24a;
+  --panel:rgba(14,22,38,.66); --panel-brd:rgba(255,255,255,.10); --panel-hi:rgba(255,255,255,.05);
+  --font-d:"Fredoka",system-ui,sans-serif; --font-m:"DM Mono",ui-monospace,Menlo,monospace;
+  color-scheme:dark;
+}
+@media (prefers-color-scheme:light){ :root:not([data-theme="dark"]){
+  --bg0:#e7edf4; --bg1:#fbfdff; --fg:#16202e; --muted:#5a6b82;
+  --accent:#0d8fd6; --gold:#c47e10;
+  --panel:rgba(255,255,255,.74); --panel-brd:rgba(12,24,46,.12); --panel-hi:rgba(255,255,255,.6);
+  color-scheme:light;
+}}
+:root[data-theme="light"]{
+  --bg0:#e7edf4; --bg1:#fbfdff; --fg:#16202e; --muted:#5a6b82;
+  --accent:#0d8fd6; --gold:#c47e10;
+  --panel:rgba(255,255,255,.74); --panel-brd:rgba(12,24,46,.12); --panel-hi:rgba(255,255,255,.6);
+  color-scheme:light;
+}
+
+html,body{height:100%}
+body{
+  background:
+    radial-gradient(130% 100% at 50% 40%, var(--bg1) 0%, var(--bg0) 62%);
+  color:var(--fg); overflow:hidden; font-family:var(--font-m);
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{position:relative;height:100%;width:100%;overflow:hidden}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#c.drag{cursor:grabbing}
+
+/* header */
+.head{
+  position:absolute;top:0;left:0;z-index:5;
+  padding-top:max(18px,env(safe-area-inset-top,0px));
+  padding-left:max(18px,env(safe-area-inset-left,0px));
+  pointer-events:none;
+}
+.eyebrow{
+  font-size:.66rem;letter-spacing:.28em;text-transform:uppercase;color:var(--accent);
+  font-weight:500;margin:0 0 .25em;opacity:.9;
+}
+.title{
+  font-family:var(--font-d);font-weight:600;line-height:1;margin:0;
+  font-size:clamp(1.45rem,4.6vw,2.3rem);letter-spacing:-.01em;
+  text-wrap:balance;
+  text-shadow:0 2px 18px rgba(0,0,0,.35);
+}
+.title .amp{color:var(--gold)}
+
+/* dock */
+.dock{
+  position:absolute;left:50%;transform:translateX(-50%);
+  bottom:max(16px,env(safe-area-inset-bottom,0px));
+  z-index:6;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center;
+  max-width:min(94vw,560px);
+  padding:8px;border-radius:16px;
+  background:var(--panel);border:1px solid var(--panel-brd);
+  box-shadow:0 10px 40px rgba(0,0,0,.35),inset 0 1px 0 var(--panel-hi);
+  backdrop-filter:blur(14px) saturate(1.2);-webkit-backdrop-filter:blur(14px) saturate(1.2);
+}
+.btn{
+  appearance:none;border:1px solid var(--panel-brd);background:transparent;color:var(--fg);
+  font-family:var(--font-m);font-size:.74rem;font-weight:500;
+  height:38px;padding:0 13px;border-radius:11px;cursor:pointer;
+  display:inline-flex;align-items:center;gap:7px;white-space:nowrap;
+  transition:background .15s,border-color .15s,transform .08s;
+}
+.btn:hover{background:var(--panel-hi);border-color:var(--accent)}
+.btn:active{transform:translateY(1px)}
+.btn[aria-pressed="true"]{background:color-mix(in srgb,var(--accent) 22%,transparent);border-color:var(--accent);color:var(--fg)}
+.btn svg{width:15px;height:15px;flex:none}
+.btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+.speed{display:flex;align-items:center;gap:9px;height:38px;padding:0 12px;border-radius:11px;border:1px solid var(--panel-brd)}
+.speed label{font-size:.6rem;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:92px;height:4px;border-radius:4px;
+  background:linear-gradient(90deg,var(--accent),var(--accent)) no-repeat,color-mix(in srgb,var(--fg) 20%,transparent);
+  background-size:var(--fill,50%) 100%;cursor:pointer}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;
+  background:var(--fg);border:2px solid var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-thumb{width:13px;height:13px;border-radius:50%;background:var(--fg);border:2px solid var(--accent)}
+
+.hint{
+  position:absolute;right:max(16px,env(safe-area-inset-right,0px));
+  bottom:max(18px,env(safe-area-inset-bottom,0px));
+  z-index:5;font-size:.62rem;color:var(--muted);letter-spacing:.04em;
+  pointer-events:none;text-align:right;line-height:1.5;opacity:.8;
+}
+@media (max-width:560px){ .hint{display:none} .title{font-size:1.5rem} }
+.sep{width:1px;height:22px;background:var(--panel-brd);margin:0 2px}
+</style>
+
+<div class="wrap">
+  <canvas id="c"></canvas>
+  <header class="head">
+    <p class="eyebrow">Procedural&nbsp;·&nbsp;Voxel&nbsp;·&nbsp;Animated</p>
+    <h1 class="title">Genie <span class="amp">&amp;</span> Lamp</h1>
+  </header>
+  <div class="hint">drag to rotate<br>scroll / pinch to zoom</div>
+  <nav class="dock" aria-label="controls">
+    <button class="btn" id="play" aria-pressed="true" title="Play / pause">
+      <svg id="playicon" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>
+      <span id="playlbl">Pause</span>
+    </button>
+    <div class="speed">
+      <label for="spd">Speed</label>
+      <input type="range" id="spd" min="0" max="200" value="100">
+    </div>
+    <button class="btn" id="spin" aria-pressed="false" title="Auto-rotate">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 3v5h-5"/></svg>
+      <span>Spin</span>
+    </button>
+    <div class="sep"></div>
+    <button class="btn" id="reset" title="Reset the view">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9 9 0 0 0-6.36 2.64L3 8"/><path d="M3 3v5h5"/></svg>
+      <span>Reset</span>
+    </button>
+  </nav>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const MODEL = {"K":["gold","gold_glow","blue","blue_light","float","eye","gem"],"G":["lamp","tail","genie","eye","gem","float"],"V":[[-3,0,-1,0,0,0],[-3,0,0,0,0,0],[-3,0,1,0,0,0],[-2,0,-2,0,0,0],[-2,0,-1,0,0,0],[-2,0,0,0,0,0],[-2,0,1,0,0,0],[-2,0,2,0,0,0],[-1,0,-2,0,0,0],[-1,0,-1,0,0,0],[-1,0,0,0,0,0],[-1,0,1,0,0,0],[-1,0,2,0,0,0],[0,0,-2,0,0,0],[0,0,-1,0,0,0],[0,0,0,0,0,0],[0,0,1,0,0,0],[0,0,2,0,0,0],[1,0,-2,0,0,0],[1,0,-1,0,0,0],[1,0,0,0,0,0],[1,0,1,0,0,0],[1,0,2,0,0,0],[2,0,-2,0,0,0],[2,0,-1,0,0,0],[2,0,0,0,0,0],[2,0,1,0,0,0],[2,0,2,0,0,0],[3,0,-1,0,0,0],[3,0,0,0,0,0],[3,0,1,0,0,0],[-2,1,-1,0,0,0],[-2,1,0,0,0,0],[-2,1,1,0,0,0],[-1,1,-1,0,0,0],[-1,1,0,0,0,0],[-1,1,1,0,0,0],[0,1,-1,0,0,0],[0,1,0,0,0,0],[0,1,1,0,0,0],[1,1,-1,0,0,0],[1,1,0,0,0,0],[1,1,1,0,0,0],[2,1,-1,0,0,0],[2,1,0,0,0,0],[2,1,1,0,0,0],[-2,2,0,0,0,0],[-1,2,-1,0,0,0],[-1,2,0,0,0,0],[-1,2,1,0,0,0],[0,2,-1,0,0,0],[0,2,0,0,0,0],[0,2,1,0,0,0],[1,2,-1,0,0,0],[1,2,0,0,0,0],[1,2,1,0,0,0],[2,2,0,0,0,0],[-4,3,-1,0,0,0],[-4,3,0,0,0,0],[-4,3,1,0,0,0],[-3,3,-2,0,0,0],[-3,3,-1,0,0,0],[-3,3,0,0,0,0],[-3,3,1,0,0,0],[-3,3,2,0,0,0],[-2,3,-2,0,0,0],[-2,3,-1,0,0,0],[-2,3,0,0,0,0],[-2,3,1,0,0,0],[-2,3,2,0,0,0],[-1,3,-2,0,0,0],[-1,3,-1,0,0,0],[-1,3,0,0,0,0],[-1,3,1,0,0,0],[-1,3,2,0,0,0],[0,3,-3,0,0,0],[0,3,-2,0,0,0],[0,3,-1,0,0,0],[0,3,0,0,0,0],[0,3,1,0,0,0],[0,3,2,0,0,0],[0,3,3,0,0,0],[1,3,-2,0,0,0],[1,3,-1,0,0,0],[1,3,0,0,0,0],[1,3,1,0,0,0],[1,3,2,0,0,0],[2,3,-2,0,0,0],[2,3,-1,0,0,0],[2,3,0,0,0,0],[2,3,1,0,0,0],[2,3,2,0,0,0],[3,3,-2,0,0,0],[3,3,-1,0,0,0],[3,3,0,0,0,0],[3,3,1,0,0,0],[3,3,2,0,0,0],[4,3,-1,0,0,0],[4,3,0,0,0,0],[4,3,1,0,0,0],[-5,4,-1,0,0,0],[-5,4,0,0,0,0],[-5,4,1,0,0,0],[-4,4,-2,0,0,0],[-4,4,-1,0,0,0],[-4,4,0,0,0,0],[-4,4,1,0,0,0],[-4,4,2,0,0,0],[-3,4,-2,0,0,0],[-3,4,-1,0,0,0],[-3,4,0,0,0,0],[-3,4,1,0,0,0],[-3,4,2,1,0,0],[-2,4,-3,0,0,0],[-2,4,-2,0,0,0],[-2,4,-1,0,0,0],[-2,4,0,0,0,0],[-2,4,1,0,0,0],[-2,4,2,0,0,0],[-2,4,3,0,0,0],[-1,4,-3,0,0,0],[-1,4,-2,0,0,0],[-1,4,-1,0,0,0],[-1,4,0,0,0,0],[-1,4,1,0,0,0],[-1,4,2,0,0,0],[-1,4,3,1,0,0],[0,4,-3,0,0,0],[0,4,-2,0,0,0],[0,4,-1,0,0,0],[0,4,0,0,0,0],[0,4,1,0,0,0],[0,4,2,0,0,0],[0,4,3,0,0,0],[1,4,-3,0,0,0],[1,4,-2,0,0,0],[1,4,-1,0,0,0],[1,4,0,0,0,0],[1,4,1,0,0,0],[1,4,2,0,0,0],[1,4,3,1,0,0],[2,4,-3,0,0,0],[2,4,-2,0,0,0],[2,4,-1,0,0,0],[2,4,0,0,0,0],[2,4,1,0,0,0],[2,4,2,0,0,0],[2,4,3,0,0,0],[3,4,-2,0,0,0],[3,4,-1,0,0,0],[3,4,0,0,0,0],[3,4,1,0,0,0],[3,4,2,1,0,0],[4,4,-2,0,0,0],[4,4,-1,0,0,0],[4,4,0,0,0,0],[4,4,1,0,0,0],[4,4,2,0,0,0],[5,4,-1,0,0,0],[5,4,0,0,0,0],[5,4,1,0,0,0],[-5,5,-1,0,0,0],[-5,5,0,0,0,0],[-5,5,1,0,0,0],[-4,5,-2,0,0,0],[-4,5,-1,0,0,0],[-4,5,0,0,0,0],[-4,5,1,0,0,0],[-4,5,2,1,0,0],[-3,5,-3,0,0,0],[-3,5,-2,0,0,0],[-3,5,-1,0,0,0],[-3,5,0,0,0,0],[-3,5,1,0,0,0],[-3,5,2,0,0,0],[-3,5,3,0,0,0],[-2,5,-3,0,0,0],[-2,5,-2,0,0,0],[-2,5,-1,0,0,0],[-2,5,0,0,0,0],[-2,5,1,0,0,0],[-2,5,2,0,0,0],[-2,5,3,1,0,0],[-1,5,-3,0,0,0],[-1,5,-2,0,0,0],[-1,5,-1,0,0,0],[-1,5,0,0,0,0],[-1,5,1,0,0,0],[-1,5,2,0,0,0],[-1,5,3,0,0,0],[0,5,-3,0,0,0],[0,5,-2,0,0,0],[0,5,-1,0,0,0],[0,5,0,0,0,0],[0,5,1,0,0,0],[0,5,2,0,0,0],[0,5,3,1,0,0],[1,5,-3,0,0,0],[1,5,-2,0,0,0],[1,5,-1,0,0,0],[1,5,0,0,0,0],[1,5,1,0,0,0],[1,5,2,0,0,0],[1,5,3,0,0,0],[2,5,-3,0,0,0],[2,5,-2,0,0,0],[2,5,-1,0,0,0],[2,5,0,0,0,0],[2,5,1,0,0,0],[2,5,2,0,0,0],[2,5,3,1,0,0],[3,5,-3,0,0,0],[3,5,-2,0,0,0],[3,5,-1,0,0,0],[3,5,0,0,0,0],[3,5,1,0,0,0],[3,5,2,0,0,0],[3,5,3,0,0,0],[4,5,-2,0,0,0],[4,5,-1,0,0,0],[4,5,0,0,0,0],[4,5,1,0,0,0],[4,5,2,1,0,0],[5,5,-1,0,0,0],[5,5,0,0,0,0],[5,5,1,0,0,0],[-5,6,-1,0,0,0],[-5,6,0,0,0,0],[-5,6,1,0,0,0],[-4,6,-2,0,0,0],[-4,6,-1,0,0,0],[-4,6,0,0,0,0],[-4,6,1,0,0,0],[-4,6,2,0,0,0],[-3,6,-3,0,0,0],[-3,6,-2,0,0,0],[-3,6,-1,0,0,0],[-3,6,0,0,0,0],[-3,6,1,0,0,0],[-3,6,2,0,0,0],[-3,6,3,0,0,0],[-2,6,-3,0,0,0],[-2,6,-2,0,0,0],[-2,6,-1,0,0,0],[-2,6,0,0,0,0],[-2,6,1,0,0,0],[-2,6,2,0,0,0],[-2,6,3,0,0,0],[-1,6,-3,0,0,0],[-1,6,-2,0,0,0],[-1,6,-1,0,0,0],[-1,6,0,0,0,0],[-1,6,1,0,0,0],[-1,6,2,0,0,0],[-1,6,3,0,0,0],[0,6,-3,0,0,0],[0,6,-2,0,0,0],[0,6,-1,0,0,0],[0,6,0,0,0,0],[0,6,1,0,0,0],[0,6,2,0,0,0],[0,6,3,0,0,0],[1,6,-3,0,0,0],[1,6,-2,0,0,0],[1,6,-1,0,0,0],[1,6,0,0,0,0],[1,6,1,0,0,0],[1,6,2,0,0,0],[1,6,3,0,0,0],[2,6,-3,0,0,0],[2,6,-2,0,0,0],[2,6,-1,0,0,0],[2,6,0,0,0,0],[2,6,1,0,0,0],[2,6,2,0,0,0],[2,6,3,0,0,0],[3,6,-3,0,0,0],[3,6,-2,0,0,0],[3,6,-1,0,0,0],[3,6,0,0,0,0],[3,6,1,0,0,0],[3,6,2,0,0,0],[3,6,3,0,0,0],[4,6,-2,0,0,0],[4,6,-1,0,0,0],[4,6,0,0,0,0],[4,6,1,0,0,0],[4,6,2,0,0,0],[5,6,-1,0,0,0],[5,6,0,0,0,0],[5,6,1,0,0,0],[-5,7,-1,0,0,0],[-5,7,0,0,0,0],[-5,7,1,0,0,0],[-4,7,-2,0,0,0],[-4,7,-1,0,0,0],[-4,7,0,0,0,0],[-4,7,1,0,0,0],[-4,7,2,0,0,0],[-3,7,-3,0,0,0],[-3,7,-2,0,0,0],[-3,7,-1,0,0,0],[-3,7,0,0,0,0],[-3,7,1,0,0,0],[-3,7,2,0,0,0],[-3,7,3,0,0,0],[-2,7,-3,0,0,0],[-2,7,-2,0,0,0],[-2,7,-1,0,0,0],[-2,7,0,0,0,0],[-2,7,1,0,0,0],[-2,7,2,0,0,0],[-2,7,3,0,0,0],[-1,7,-3,0,0,0],[-1,7,-2,0,0,0],[-1,7,-1,0,0,0],[-1,7,0,0,0,0],[-1,7,1,0,0,0],[-1,7,2,0,0,0],[-1,7,3,0,0,0],[0,7,-3,0,0,0],[0,7,-2,0,0,0],[0,7,-1,0,0,0],[0,7,0,0,0,0],[0,7,1,0,0,0],[0,7,2,0,0,0],[0,7,3,0,0,0],[1,7,-3,0,0,0],[1,7,-2,0,0,0],[1,7,-1,0,0,0],[1,7,0,0,0,0],[1,7,1,0,0,0],[1,7,2,0,0,0],[1,7,3,0,0,0],[2,7,-3,0,0,0],[2,7,-2,0,0,0],[2,7,-1,0,0,0],[2,7,0,0,0,0],[2,7,1,0,0,0],[2,7,2,0,0,0],[2,7,3,0,0,0],[3,7,-3,0,0,0],[3,7,-2,0,0,0],[3,7,-1,0,0,0],[3,7,0,0,0,0],[3,7,1,0,0,0],[3,7,2,0,0,0],[3,7,3,0,0,0],[4,7,-2,0,0,0],[4,7,-1,0,0,0],[4,7,0,0,0,0],[4,7,1,0,0,0],[4,7,2,0,0,0],[5,7,-1,0,0,0],[5,7,0,0,0,0],[5,7,1,0,0,0],[-4,8,-1,0,0,0],[-4,8,0,0,0,0],[-4,8,1,0,0,0],[-3,8,-2,0,0,0],[-3,8,-1,0,0,0],[-3,8,0,0,0,0],[-3,8,1,0,0,0],[-3,8,2,0,0,0],[-2,8,-2,0,0,0],[-2,8,-1,0,0,0],[-2,8,0,0,0,0],[-2,8,1,0,0,0],[-2,8,2,1,0,0],[-1,8,-3,0,0,0],[-1,8,-2,0,0,0],[-1,8,-1,0,0,0],[-1,8,0,0,0,0],[-1,8,1,0,0,0],[-1,8,2,0,0,0],[-1,8,3,0,0,0],[0,8,-3,0,0,0],[0,8,-2,0,0,0],[0,8,-1,0,0,0],[0,8,0,0,0,0],[0,8,1,0,0,0],[0,8,2,0,0,0],[0,8,3,1,0,0],[1,8,-3,0,0,0],[1,8,-2,0,0,0],[1,8,-1,0,0,0],[1,8,0,0,0,0],[1,8,1,0,0,0],[1,8,2,0,0,0],[1,8,3,0,0,0],[2,8,-2,0,0,0],[2,8,-1,0,0,0],[2,8,0,0,0,0],[2,8,1,0,0,0],[2,8,2,1,0,0],[3,8,-2,0,0,0],[3,8,-1,0,0,0],[3,8,0,0,0,0],[3,8,1,0,0,0],[3,8,2,0,0,0],[4,8,-1,0,0,0],[4,8,0,0,0,0],[4,8,1,0,0,0],[-3,9,-1,0,0,0],[-3,9,0,0,0,0],[-3,9,1,0,0,0],[-2,9,-2,0,0,0],[-2,9,-1,0,0,0],[-2,9,0,0,0,0],[-2,9,1,0,0,0],[-2,9,2,0,0,0],[-1,9,-2,0,0,0],[-1,9,-1,0,0,0],[-1,9,0,0,0,0],[-1,9,1,0,0,0],[-1,9,2,0,0,0],[0,9,-2,0,0,0],[0,9,-1,0,0,0],[0,9,0,0,0,0],[0,9,1,0,0,0],[0,9,2,0,0,0],[1,9,-2,0,0,0],[1,9,-1,0,0,0],[1,9,0,0,0,0],[1,9,1,0,0,0],[1,9,2,0,0,0],[2,9,-2,0,0,0],[2,9,-1,0,0,0],[2,9,0,0,0,0],[2,9,1,0,0,0],[2,9,2,0,0,0],[3,9,-1,0,0,0],[3,9,0,0,0,0],[3,9,1,0,0,0],[-2,10,-1,0,0,0],[-2,10,0,0,0,0],[-2,10,1,0,0,0],[-1,10,-1,0,0,0],[-1,10,0,0,0,0],[-1,10,1,0,0,0],[0,10,-2,0,0,0],[0,10,-1,0,0,0],[0,10,0,0,0,0],[0,10,1,0,0,0],[0,10,2,0,0,0],[1,10,-1,0,0,0],[1,10,0,0,0,0],[1,10,1,0,0,0],[2,10,-1,0,0,0],[2,10,0,0,0,0],[2,10,1,0,0,0],[-3,11,-1,0,0,0],[-3,11,0,0,0,0],[-3,11,1,0,0,0],[-2,11,-1,0,0,0],[-2,11,0,0,0,0],[-2,11,1,0,0,0],[-1,11,-2,0,0,0],[-1,11,-1,0,0,0],[-1,11,0,0,0,0],[-1,11,1,0,0,0],[-1,11,2,0,0,0],[0,11,-2,0,0,0],[0,11,-1,0,0,0],[0,11,0,0,0,0],[0,11,1,0,0,0],[0,11,2,0,0,0],[1,11,-2,0,0,0],[1,11,-1,0,0,0],[1,11,0,0,0,0],[1,11,1,0,0,0],[1,11,2,0,0,0],[2,11,-1,0,0,0],[2,11,0,0,0,0],[2,11,1,0,0,0],[3,11,-1,0,0,0],[3,11,0,0,0,0],[3,11,1,0,0,0],[-2,12,-1,0,0,0],[-2,12,0,0,0,0],[-2,12,1,0,0,0],[-1,12,-1,0,0,0],[-1,12,0,0,0,0],[-1,12,1,0,0,0],[0,12,-2,0,0,0],[0,12,-1,0,0,0],[0,12,0,0,0,0],[0,12,1,0,0,0],[0,12,2,0,0,0],[1,12,-1,0,0,0],[1,12,0,0,0,0],[1,12,1,0,0,0],[2,12,-1,0,0,0],[2,12,0,0,0,0],[2,12,1,0,0,0],[-2,13,0,0,0,0],[-1,13,-1,0,0,0],[-1,13,0,0,0,0],[-1,13,1,0,0,0],[0,13,-1,0,0,0],[0,13,0,0,0,0],[0,13,1,0,0,0],[1,13,-1,0,0,0],[1,13,0,0,0,0],[1,13,1,0,0,0],[2,13,0,0,0,0],[-1,14,-1,0,0,0],[-1,14,0,0,0,0],[-1,14,1,0,0,0],[0,14,-1,0,0,0],[0,14,0,0,0,0],[0,14,1,0,0,0],[1,14,-1,0,0,0],[1,14,0,0,0,0],[1,14,1,0,0,0],[-1,15,0,2,1,0.28],[0,15,-1,0,0,0],[0,15,0,0,0,0],[0,15,1,0,0,0],[1,15,0,0,0,0],[0,16,0,0,0,0],[0,17,0,0,0,0],[1,17,0,0,0,0],[-1,17,0,0,0,0],[0,17,1,0,0,0],[0,17,-1,0,0,0],[0,18,0,0,0,0],[6,7,-1,0,0,0],[6,7,0,0,0,0],[6,7,1,0,0,0],[5,8,-1,0,0,0],[5,8,0,0,0,0],[5,8,1,0,0,0],[6,8,-1,0,0,0],[6,8,0,0,0,0],[6,8,1,0,0,0],[7,8,-1,0,0,0],[7,8,0,0,0,0],[7,8,1,0,0,0],[6,9,-1,0,0,0],[6,9,0,0,0,0],[6,9,1,0,0,0],[7,9,-1,0,0,0],[7,9,0,0,0,0],[7,9,1,0,0,0],[8,9,-1,0,0,0],[8,9,0,0,0,0],[8,9,1,0,0,0],[8,10,-1,0,0,0],[8,10,0,0,0,0],[8,10,1,0,0,0],[9,11,0,0,0,0],[10,12,0,0,0,0],[11,13,0,0,0,0],[-5,8,-1,0,0,0],[-5,8,0,0,0,0],[-5,8,1,0,0,0],[-5,9,-1,0,0,0],[-5,9,0,0,0,0],[-5,9,1,0,0,0],[-6,9,-1,0,0,0],[-6,9,0,0,0,0],[-6,9,1,0,0,0],[-7,9,-1,0,0,0],[-7,9,0,0,0,0],[-7,9,1,0,0,0],[-8,9,-1,0,0,0],[-8,9,0,0,0,0],[-8,9,1,0,0,0],[-9,9,-1,0,0,0],[-9,9,0,0,0,0],[-9,9,1,0,0,0],[-10,8,-1,0,0,0],[-10,8,0,0,0,0],[-10,8,1,0,0,0],[-10,7,-1,0,0,0],[-10,7,0,0,0,0],[-10,7,1,0,0,0],[-10,6,-1,0,0,0],[-10,6,0,0,0,0],[-10,6,1,0,0,0],[-10,5,-1,0,0,0],[-10,5,0,0,0,0],[-10,5,1,0,0,0],[-10,4,-1,0,0,0],[-10,4,0,0,0,0],[-10,4,1,0,0,0],[-9,4,-1,0,0,0],[-9,4,0,0,0,0],[-9,4,1,0,0,0],[-9,3,-1,0,0,0],[-9,3,0,0,0,0],[-9,3,1,0,0,0],[-8,3,-1,0,0,0],[-8,3,0,0,0,0],[-8,3,1,0,0,0],[-7,3,-1,0,0,0],[-7,3,0,0,0,0],[-7,3,1,0,0,0],[-6,3,-1,0,0,0],[-6,3,0,0,0,0],[-6,3,1,0,0,0],[3,12,1,2,1,0.0],[3,12,2,2,1,0.04],[2,13,3,2,1,0.08],[1,13,3,2,1,0.12],[0,14,3,2,1,0.16],[-1,14,2,2,1,0.2],[-1,15,1,2,1,0.24],[0,16,-1,2,1,0.36],[1,17,-2,2,1,0.4],[2,17,-2,2,1,0.44],[3,18,-2,2,1,0.52],[3,18,-3,2,1,0.52],[3,18,-1,2,1,0.52],[4,18,-3,2,1,0.52],[4,18,-2,2,1,0.52],[4,18,-1,2,1,0.52],[5,18,-3,2,1,0.52],[5,18,-2,2,1,0.52],[5,18,-1,2,1,0.52],[4,19,-2,2,1,0.56],[4,19,-1,2,1,0.6],[4,19,0,2,1,0.6],[5,19,-2,2,1,0.56],[5,19,-1,2,1,0.6],[5,19,0,2,1,0.6],[6,19,-2,2,1,0.56],[6,19,-1,2,1,0.6],[6,19,0,2,1,0.6],[4,19,1,2,1,0.6],[5,19,1,2,1,0.6],[6,19,1,2,1,0.6],[4,20,-1,2,1,0.64],[4,20,0,2,1,0.68],[4,20,1,2,1,0.68],[5,20,-1,2,1,0.64],[5,20,0,2,1,0.68],[5,20,1,2,1,0.68],[6,20,-1,2,1,0.64],[6,20,0,2,1,0.68],[6,20,1,2,1,0.68],[4,20,2,2,1,0.68],[5,20,2,2,1,0.68],[6,20,2,2,1,0.68],[4,21,0,2,1,0.76],[4,21,1,2,1,0.76],[4,21,2,2,1,0.76],[5,21,0,2,1,0.76],[5,21,1,2,1,0.76],[5,21,2,2,1,0.76],[6,21,0,2,1,0.76],[6,21,1,2,1,0.76],[6,21,2,2,1,0.76],[4,22,0,2,1,0.84],[4,22,1,2,1,0.84],[4,22,2,2,1,0.84],[5,22,0,2,1,0.84],[5,22,1,2,1,0.84],[5,22,2,2,1,0.84],[6,22,0,2,1,0.84],[6,22,1,2,1,0.84],[6,22,2,2,1,0.84],[4,23,0,2,1,0.92],[4,23,1,2,1,0.92],[4,23,2,2,1,0.88],[5,23,0,2,1,0.92],[5,23,1,2,1,0.92],[5,23,2,2,1,0.88],[6,23,0,2,1,0.92],[6,23,1,2,1,0.92],[6,23,2,2,1,0.88],[4,23,-1,2,1,0.92],[5,23,-1,2,1,0.92],[6,23,-1,2,1,0.92],[4,24,-1,2,1,0.96],[4,24,0,2,1,0.96],[4,24,1,2,1,0.96],[5,24,-1,2,1,1.0],[5,24,0,2,1,1.0],[5,24,1,2,1,1.0],[6,24,-1,2,1,1.0],[6,24,0,2,1,1.0],[6,24,1,2,1,1.0],[7,24,-1,2,1,1.0],[7,24,0,2,1,1.0],[7,24,1,2,1,1.0],[4,25,-1,2,2,0],[4,25,0,2,2,0],[4,25,1,2,2,0],[5,25,-2,2,2,0],[5,25,-1,2,2,0],[5,25,0,2,2,0],[5,25,1,2,2,0],[5,25,2,2,2,0],[6,25,-2,2,2,0],[6,25,-1,2,2,0],[6,25,0,2,2,0],[6,25,1,2,2,0],[6,25,2,2,2,0],[7,25,-2,2,2,0],[7,25,-1,2,2,0],[7,25,0,2,2,0],[7,25,1,2,2,0],[7,25,2,2,2,0],[8,25,-1,2,2,0],[8,25,0,2,2,0],[8,25,1,2,2,0],[3,26,0,2,2,0],[4,26,-1,2,2,0],[4,26,0,2,2,0],[4,26,1,2,2,0],[5,26,-2,2,2,0],[5,26,-1,2,2,0],[5,26,0,2,2,0],[5,26,1,2,2,0],[5,26,2,2,2,0],[6,26,-2,2,2,0],[6,26,-1,2,2,0],[6,26,0,2,2,0],[6,26,1,2,2,0],[6,26,2,2,2,0],[7,26,-2,2,2,0],[7,26,-1,2,2,0],[7,26,0,2,2,0],[7,26,1,2,2,0],[7,26,2,2,2,0],[8,26,-1,2,2,0],[8,26,0,2,2,0],[8,26,1,2,2,0],[9,26,0,2,2,0],[3,27,-1,2,2,0],[3,27,0,2,2,0],[3,27,1,2,2,0],[4,27,-2,2,2,0],[4,27,-1,2,2,0],[4,27,0,2,2,0],[4,27,1,2,2,0],[4,27,2,2,2,0],[5,27,-2,2,2,0],[5,27,-1,2,2,0],[5,27,0,2,2,0],[5,27,1,2,2,0],[5,27,2,2,2,0],[6,27,-2,2,2,0],[6,27,-1,2,2,0],[6,27,0,2,2,0],[6,27,1,2,2,0],[6,27,2,2,2,0],[7,27,-2,2,2,0],[7,27,-1,2,2,0],[7,27,0,2,2,0],[7,27,1,2,2,0],[7,27,2,2,2,0],[8,27,-2,2,2,0],[8,27,-1,2,2,0],[8,27,0,2,2,0],[8,27,1,2,2,0],[8,27,2,2,2,0],[9,27,-1,2,2,0],[9,27,0,2,2,0],[9,27,1,2,2,0],[3,28,0,2,2,0],[4,28,-1,2,2,0],[4,28,0,2,2,0],[4,28,1,2,2,0],[5,28,-2,2,2,0],[5,28,-1,2,2,0],[5,28,0,2,2,0],[5,28,1,2,2,0],[5,28,2,2,2,0],[6,28,-2,2,2,0],[6,28,-1,2,2,0],[6,28,0,2,2,0],[6,28,1,2,2,0],[6,28,2,2,2,0],[7,28,-2,2,2,0],[7,28,-1,2,2,0],[7,28,0,2,2,0],[7,28,1,2,2,0],[7,28,2,2,2,0],[8,28,-1,2,2,0],[8,28,0,2,2,0],[8,28,1,2,2,0],[9,28,0,2,2,0],[4,29,-1,2,2,0],[4,29,0,2,2,0],[4,29,1,2,2,0],[5,29,-1,2,2,0],[5,29,0,2,2,0],[5,29,1,2,2,0],[6,29,-2,2,2,0],[6,29,-1,2,2,0],[6,29,0,2,2,0],[6,29,1,2,2,0],[6,29,2,2,2,0],[7,29,-1,2,2,0],[7,29,0,2,2,0],[7,29,1,2,2,0],[8,29,-1,2,2,0],[8,29,0,2,2,0],[8,29,1,2,2,0],[3,27,3,3,2,0],[3,27,2,2,2,0],[4,27,3,3,2,0],[5,27,3,3,2,0],[6,27,3,3,2,0],[7,26,3,3,2,0],[8,26,3,3,2,0],[8,26,2,2,2,0],[9,26,3,3,2,0],[9,26,2,2,2,0],[3,26,3,3,2,0],[4,26,3,2,2,0],[5,26,3,2,2,0],[6,26,3,2,2,0],[7,27,3,2,2,0],[8,27,3,2,2,0],[9,27,3,3,2,0],[5,30,0,2,2,0],[6,30,-1,2,2,0],[6,30,0,2,2,0],[6,30,1,2,2,0],[7,30,0,2,2,0],[4,31,0,2,2,0],[5,31,-1,2,2,0],[5,31,0,2,2,0],[5,31,1,2,2,0],[6,31,-2,2,2,0],[6,31,-1,2,2,0],[6,31,0,2,2,0],[6,31,1,2,2,0],[6,31,2,2,2,0],[7,31,-1,2,2,0],[7,31,0,2,2,0],[7,31,1,2,2,0],[8,31,0,2,2,0],[4,32,0,2,2,0],[5,32,-1,2,2,0],[5,32,0,2,2,0],[5,32,1,2,2,0],[6,32,-2,2,2,0],[6,32,-1,2,2,0],[6,32,0,2,2,0],[6,32,1,2,2,0],[6,32,2,2,2,0],[7,32,-1,2,2,0],[7,32,0,2,2,0],[7,32,1,2,2,0],[8,32,0,2,2,0],[4,33,0,2,2,0],[5,33,-1,2,2,0],[5,33,0,2,2,0],[5,33,1,2,2,0],[6,33,-2,2,2,0],[6,33,-1,2,2,0],[6,33,0,2,2,0],[6,33,1,2,2,0],[6,33,2,2,2,0],[7,33,-1,2,2,0],[7,33,0,2,2,0],[7,33,1,2,2,0],[8,33,0,2,2,0],[4,32,2,5,3,0],[4,32,3,5,3,0],[5,32,2,5,3,0],[5,32,3,5,3,0],[7,32,2,5,3,0],[7,32,3,5,3,0],[8,32,2,5,3,0],[8,32,3,5,3,0],[3,34,0,2,2,0],[4,34,-1,2,2,0],[4,34,0,2,2,0],[4,34,1,2,2,0],[5,34,-2,2,2,0],[5,34,-1,2,2,0],[5,34,0,2,2,0],[5,34,1,2,2,0],[5,34,2,2,2,0],[6,34,-2,2,2,0],[6,34,-1,2,2,0],[6,34,0,2,2,0],[6,34,1,2,2,0],[6,34,2,2,2,0],[7,34,-2,2,2,0],[7,34,-1,2,2,0],[7,34,0,2,2,0],[7,34,1,2,2,0],[7,34,2,2,2,0],[8,34,-1,2,2,0],[8,34,0,2,2,0],[8,34,1,2,2,0],[9,34,0,2,2,0],[4,35,-1,2,2,0],[4,35,0,2,2,0],[4,35,1,2,2,0],[5,35,-2,2,2,0],[5,35,-1,2,2,0],[5,35,0,2,2,0],[5,35,1,2,2,0],[5,35,2,2,2,0],[6,35,-2,2,2,0],[6,35,-1,2,2,0],[6,35,0,2,2,0],[6,35,1,2,2,0],[6,35,2,2,2,0],[7,35,-2,2,2,0],[7,35,-1,2,2,0],[7,35,0,2,2,0],[7,35,1,2,2,0],[7,35,2,2,2,0],[8,35,-1,2,2,0],[8,35,0,2,2,0],[8,35,1,2,2,0],[5,36,-1,2,2,0],[5,36,0,2,2,0],[5,36,1,2,2,0],[6,36,-1,2,2,0],[6,36,0,2,2,0],[6,36,1,2,2,0],[7,36,-1,2,2,0],[7,36,0,2,2,0],[7,36,1,2,2,0],[6,34,3,6,4,0],[6,35,3,6,4,0],[6,35,4,6,4,0],[6,34,4,6,4,0],[6,37,0,2,2,0],[6,38,0,3,2,0],[-1,34,2,4,5,0.0],[2,37,-2,4,5,0.12],[12,32,1,4,5,0.25],[11,27,-2,4,5,0.38],[2,23,4,4,5,0.5],[10,38,0,4,5,0.62],[0,29,-4,4,5,0.75],[13,36,1,4,5,0.88]]};
+(function(){
+"use strict";
+const T = THREE;
+const KIND = MODEL.K, GRP = MODEL.G, VOX = MODEL.V;
+
+// ---- palette ---------------------------------------------------------------
+const COL = {
+  gold:0xE0951E, gold_glow:0xFFC23A, blue:0x3BB0EE, blue_light:0xA8E8FF,
+  float:0x6ACBF7, eye:0xEAFCFF, gem:0xFFB03A
+};
+const EMIT = {gold_glow:0xFFC23A, eye:0xBDF2FF, gem:0xFF8A12};
+
+// ---- renderer / scene ------------------------------------------------------
+const canvas = document.getElementById('c');
+const renderer = new T.WebGLRenderer({canvas, antialias:true, alpha:true, powerPreference:'high-performance'});
+renderer.setClearColor(0x000000,0);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = T.PCFSoftShadowMap;
+renderer.outputEncoding = T.sRGBEncoding;
+renderer.toneMapping = T.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.08;
+
+const scene = new T.Scene();
+
+// bbox + center
+let mnx=1e9,mny=1e9,mnz=1e9,mxx=-1e9,mxy=-1e9,mxz=-1e9;
+for(const v of VOX){ mnx=Math.min(mnx,v[0]);mny=Math.min(mny,v[1]);mnz=Math.min(mnz,v[2]);
+  mxx=Math.max(mxx,v[0]);mxy=Math.max(mxy,v[1]);mxz=Math.max(mxz,v[2]); }
+const cen = new T.Vector3((mnx+mxx)/2,(mny+mxy)/2,(mnz+mxz)/2);
+
+// pivot group holds all voxels + attached glows; shifted so model centre = origin
+const pivot = new T.Group();
+pivot.position.set(-cen.x,-cen.y,-cen.z);
+scene.add(pivot);
+
+// ---- camera (reproduces the validated iso orientation exactly) -------------
+const R = new T.Vector3(0.7071,0,-0.7071).normalize();           // screen-right
+const U = new T.Vector3(-0.3906,0.8324,-0.3906).normalize();     // screen-up
+const Zc = R.clone().cross(U).normalize();                        // camera backward
+const DIST = 260;
+const camera = new T.OrthographicCamera(-30,30,30,-30,1,700);
+camera.position.copy(Zc.clone().multiplyScalar(DIST));
+camera.up.copy(U);
+camera.lookAt(0,0,0);
+
+// screen-space bounds of the model (for auto-fit)
+let bx0=1e9,bx1=-1e9,by0=1e9,by1=-1e9;
+for(const v of VOX){
+  const p = new T.Vector3(v[0]-cen.x, v[1]-cen.y, v[2]-cen.z);
+  const sx = p.dot(R), sy = p.dot(U);
+  bx0=Math.min(bx0,sx); bx1=Math.max(bx1,sx); by0=Math.min(by0,sy); by1=Math.max(by1,sy);
+}
+const PAD = 2.2;                                   // room for cube corners + drifting cubes + glow
+bx0-=PAD; bx1+=PAD; by0-=PAD; by1+=PAD;
+let zoom = 1;
+function fit(){
+  const w = canvas.clientWidth||innerWidth, h = canvas.clientHeight||innerHeight;
+  renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.setSize(w,h,false);
+  const aspect = w/h;
+  const ccx=(bx0+bx1)/2, ccy=(by0+by1)/2;
+  let hw=(bx1-bx0)/2, hh=(by1-by0)/2;
+  if(hw/hh < aspect) hw = hh*aspect; else hh = hw/aspect;
+  hw/=zoom; hh/=zoom;
+  camera.left=ccx-hw; camera.right=ccx+hw; camera.top=ccy+hh; camera.bottom=ccy-hh;
+  camera.updateProjectionMatrix();
+}
+
+// ---- lights (world; stable shading as the model turns) ---------------------
+scene.add(new T.AmbientLight(0x6978a0, 0.55));
+const hemi = new T.HemisphereLight(0xdfe9ff, 0x1a2338, 0.6); scene.add(hemi);
+const key = new T.DirectionalLight(0xfff2d6, 1.5);
+key.position.set(-14,26,16);
+key.castShadow = true;
+key.shadow.mapSize.set(2048,2048);
+const sc = key.shadow.camera; sc.left=-24; sc.right=24; sc.top=28; sc.bottom=-24; sc.near=1; sc.far=140;
+key.shadow.bias=-0.0005; key.shadow.normalBias=0.6;
+scene.add(key);
+const fill = new T.DirectionalLight(0x79c6ff, 0.6); fill.position.set(20,8,10); scene.add(fill);
+const rim = new T.DirectionalLight(0x4ea8ff, 0.7); rim.position.set(2,14,-22); scene.add(rim);
+
+// point lights attached to the glow sources (ride the pivot so they stay put)
+const eyeLight = new T.PointLight(0x9fe8ff, 1.3, 20, 2); eyeLight.position.set(6,32,4); pivot.add(eyeLight);
+const gemLight = new T.PointLight(0xff9a2a, 1.1, 16, 2); gemLight.position.set(6,35,5); pivot.add(gemLight);
+
+// ---- materials -------------------------------------------------------------
+function std(o){ return new T.MeshStandardMaterial(o); }
+const mat = {
+  gold: std({color:0xffffff, metalness:0.28, roughness:0.46, emissive:0x3a2606, emissiveIntensity:0.35}),
+  gold_glow: std({color:COL.gold_glow, emissive:EMIT.gold_glow, emissiveIntensity:0.95, metalness:0.1, roughness:0.35}),
+  blue: std({color:0xffffff, metalness:0.12, roughness:0.32, emissive:0x0e4f8c, emissiveIntensity:0.38, transparent:true, opacity:0.86}),
+  blue_light: std({color:COL.blue_light, metalness:0.1, roughness:0.28, emissive:0x2a8fd0, emissiveIntensity:0.34, transparent:true, opacity:0.9}),
+  float: std({color:COL.float, metalness:0.1, roughness:0.3, emissive:0x1f88cf, emissiveIntensity:0.6, transparent:true, opacity:0.92}),
+  eye: std({color:COL.eye, emissive:EMIT.eye, emissiveIntensity:1.7, roughness:0.3, metalness:0}),
+  gem: std({color:0xFFC866, emissive:EMIT.gem, emissiveIntensity:1.5, roughness:0.25, metalness:0.1}),
+};
+const JITTER = {gold:true, blue:true};  // instanceColor variation
+
+// geometry: slightly inset cube so voxel seams read
+const geo = new T.BoxGeometry(0.95,0.95,0.95);
+
+// bucket voxels by kind
+const byKind = {};
+for(let i=0;i<VOX.length;i++){
+  const v=VOX[i], kind=KIND[v[3]];
+  (byKind[kind]||(byKind[kind]=[])).push(v);
+}
+
+const meshes = []; // {mesh, items, kind, animated}
+const dummy = new T.Object3D();
+const tmpC = new T.Color();
+const YAXIS = new T.Vector3(0,1,0);
+const ANIM = new Set(['blue','blue_light','float','eye','gem']); // kinds with moving instances
+
+function rand(seed){ let x=Math.sin(seed*127.1+311.7)*43758.5453; return x-Math.floor(x); }
+
+for(const kind in byKind){
+  const items = byKind[kind];
+  const m = new T.InstancedMesh(geo, mat[kind], items.length);
+  m.castShadow = true; m.receiveShadow = (kind==='gold');
+  m.frustumCulled = false;
+  const base = COL[kind];
+  for(let i=0;i<items.length;i++){
+    const v=items[i];
+    dummy.position.set(v[0],v[1],v[2]);
+    dummy.rotation.set(0,0,0); dummy.scale.set(1,1,1);
+    dummy.updateMatrix();
+    m.setMatrixAt(i, dummy.matrix);
+    if(JITTER[kind]){
+      const f = 0.9 + rand(v[0]*3.1+v[1]*1.7+v[2]*2.3)*0.2;
+      tmpC.setHex(base).multiplyScalar(f);
+      m.setColorAt(i, tmpC);
+    }
+  }
+  m.instanceMatrix.needsUpdate = true;
+  if(m.instanceColor) m.instanceColor.needsUpdate = true;
+  pivot.add(m);
+  meshes.push({mesh:m, items, kind, animated:ANIM.has(kind)});
+}
+
+// ---- glow sprites (fake bloom, additive) -----------------------------------
+function glowTex(hex){
+  const s=128, cv=document.createElement('canvas'); cv.width=cv.height=s;
+  const g=cv.getContext('2d'); const c=new T.Color(hex);
+  const r=Math.round(c.r*255),gg=Math.round(c.g*255),b=Math.round(c.b*255);
+  const grd=g.createRadialGradient(s/2,s/2,0,s/2,s/2,s/2);
+  grd.addColorStop(0,`rgba(${r},${gg},${b},1)`);
+  grd.addColorStop(0.35,`rgba(${r},${gg},${b},0.55)`);
+  grd.addColorStop(1,`rgba(${r},${gg},${b},0)`);
+  g.fillStyle=grd; g.fillRect(0,0,s,s);
+  const tx=new T.CanvasTexture(cv); tx.encoding=T.sRGBEncoding; return tx;
+}
+function sprite(hex, size, pos){
+  const sp=new T.Sprite(new T.SpriteMaterial({map:glowTex(hex), blending:T.AdditiveBlending, transparent:true, depthWrite:false, depthTest:true, opacity:0.9}));
+  sp.scale.set(size,size,1); sp.position.set(pos[0],pos[1],pos[2]); pivot.add(sp); return sp;
+}
+const gEyeL = sprite(0xBDF2FF, 4.2, [4.5,32.2,4]);
+const gEyeR = sprite(0xBDF2FF, 4.2, [7.5,32.2,4]);
+const gGem  = sprite(0xFFA030, 5.0, [6,34.6,5]);
+const gAmb  = sprite(0x2aa0ff, 34, [5,27,-2]); gAmb.material.opacity=0.16;
+const glowSprites=[gEyeL,gEyeR,gGem];
+
+// ---- ground contact shadow -------------------------------------------------
+const groundY = (mny - cen.y) - 0.2;
+const ground = new T.Mesh(new T.PlaneGeometry(120,120), new T.ShadowMaterial({opacity:0.34}));
+ground.rotation.x = -Math.PI/2; ground.position.y = groundY; ground.receiveShadow = true;
+scene.add(ground);
+
+// ---- interaction -----------------------------------------------------------
+let rotY=0, rotX=0, targY=0, targX=0;
+let dragging=false, lastX=0, lastY=0;
+const pointers=new Map(); let pinchD=0;
+canvas.addEventListener('pointerdown',e=>{
+  canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size===1){dragging=true; lastX=e.clientX; lastY=e.clientY; canvas.classList.add('drag');}
+});
+canvas.addEventListener('pointermove',e=>{
+  if(!pointers.has(e.pointerId))return;
+  pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(pointers.size>=2){
+    const p=[...pointers.values()]; const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y);
+    if(pinchD){ zoom=Math.max(0.55,Math.min(2.4, zoom*(d/pinchD))); fit(); }
+    pinchD=d; dragging=false; return;
+  }
+  if(dragging){
+    const dx=e.clientX-lastX, dy=e.clientY-lastY; lastX=e.clientX; lastY=e.clientY;
+    targY += dx*0.0095;
+    targX = Math.max(-0.55, Math.min(0.62, targX + dy*0.007));
+  }
+});
+function up(e){ pointers.delete(e.pointerId); if(pointers.size<2)pinchD=0; if(pointers.size===0){dragging=false;canvas.classList.remove('drag');} }
+canvas.addEventListener('pointerup',up); canvas.addEventListener('pointercancel',up);
+canvas.addEventListener('wheel',e=>{ e.preventDefault(); zoom=Math.max(0.55,Math.min(2.4, zoom*(e.deltaY<0?1.08:0.925))); fit(); }, {passive:false});
+
+// ---- controls --------------------------------------------------------------
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let playing = !reduce, spinning = false, speed = 1;
+const $play=document.getElementById('play'), $playlbl=document.getElementById('playlbl'),
+      $playicon=document.getElementById('playicon'), $spin=document.getElementById('spin'),
+      $reset=document.getElementById('reset'), $spd=document.getElementById('spd');
+const ICON_PLAY='<path d="M8 5v14l11-7z"/>', ICON_PAUSE='<rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/>';
+function syncPlay(){ $play.setAttribute('aria-pressed',playing); $playlbl.textContent=playing?'Pause':'Play'; $playicon.innerHTML=playing?ICON_PAUSE:ICON_PLAY; }
+$play.onclick=()=>{playing=!playing; syncPlay();};
+$spin.onclick=()=>{spinning=!spinning; $spin.setAttribute('aria-pressed',spinning);};
+$reset.onclick=()=>{ targY=0; targX=0; zoom=1; fit(); };
+function sliderFill(){ $spd.style.setProperty('--fill',(($spd.value-$spd.min)/($spd.max-$spd.min)*100)+'%'); }
+$spd.oninput=()=>{ speed=$spd.value/100; sliderFill(); };
+syncPlay(); sliderFill();
+if(reduce) syncPlay();
+
+// ---- animation -------------------------------------------------------------
+const mtmp=new T.Matrix4(), qtmp=new T.Quaternion(), ptmp=new T.Vector3(), stmp=new T.Vector3(1,1,1);
+const TAU=Math.PI*2;
+let tsec=0, last=performance.now();
+
+function updateAnimated(ph, amp){
+  const bob = Math.sin(ph)*1.1*amp;
+  for(const rec of meshes){
+    if(!rec.animated) continue;
+    const it=rec.items, m=rec.mesh;
+    for(let i=0;i<it.length;i++){
+      const v=it[i], grp=GRP[v[4]], t=v[5];
+      let ox=0,oy=0,oz=0,ry=0;
+      if(grp==='genie'||grp==='eye'||grp==='gem'){ oy=bob; }
+      else if(grp==='tail'){ oy=bob*t; ox=Math.sin(ph+t*6)*0.9*t*amp; oz=Math.cos(ph+t*6)*0.9*t*amp; }
+      else if(grp==='float'){ oy=Math.sin(ph+t*TAU)*1.8*amp+bob*0.5; ox=Math.cos(ph*0.8+t*TAU)*1.2*amp; ry=ph*0.6+t*9; }
+      ptmp.set(v[0]+ox, v[1]+oy, v[2]+oz);
+      if(ry){ qtmp.setFromAxisAngle(YAXIS,ry); } else qtmp.identity();
+      mtmp.compose(ptmp,qtmp,stmp);
+      m.setMatrixAt(i,mtmp);
+    }
+    m.instanceMatrix.needsUpdate=true;
+  }
+  // emissive + glow pulse
+  const pulse = 0.5+0.5*Math.sin(ph*1.25);
+  mat.eye.emissiveIntensity = 1.3 + 0.9*pulse;
+  mat.gem.emissiveIntensity = 1.1 + 0.8*pulse;
+  eyeLight.intensity = 0.9 + 0.9*pulse;
+  gemLight.intensity = 0.7 + 0.7*pulse;
+  const glint = 0.8 + 0.3*Math.sin(ph*0.9) + 0.25*Math.max(0,Math.sin(ph*0.37)**8);
+  mat.gold_glow.emissiveIntensity = glint;
+  for(const sp of glowSprites){ const b=0.7+0.5*pulse; sp.material.opacity=b; }
+}
+
+// static pose for reduced-motion / paused first frame
+function poseStatic(){ updateAnimated(0, reduce?0:0); }
+poseStatic();
+fit();
+
+function loop(now){
+  const dt=Math.min(0.05,(now-last)/1000); last=now;
+  if(playing){ tsec += dt*speed; }
+  if(spinning){ targY += dt*0.45; }
+  rotY += (targY-rotY)*0.12; rotX += (targX-rotX)*0.12;
+  pivot.rotation.y = rotY; pivot.rotation.x = rotX;
+  const ph = tsec*TAU*0.5;            // full loop ~ 4s at speed 1
+  updateAnimated(ph, (playing?1:0));
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+
+addEventListener('resize',fit);
+// theme flips don't need JS; CSS tokens handle it.
+})();
+</script>
+</body></html>

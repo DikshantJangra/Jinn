@@ -36,3 +36,14 @@ jobs:
     - name: Run automated test suite
       run: |
         pytest -v
+
+  swift-app:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build
+      run: swift build -c release
+      working-directory: app
+    - name: Self-test
+      run: .build/release/Jinn --selftest
+      working-directory: app

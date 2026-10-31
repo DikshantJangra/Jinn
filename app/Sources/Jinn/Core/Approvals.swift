@@ -1,0 +1,30 @@
+import Foundation
+
+enum Decision { case deny, once, always }
+struct ConfirmRequest { let tool: String; let summary: String; let scope: String? }
+
+/// Per-app approval: "Allow once" lasts the session, "Always" is persisted.
+final class Approvals {
+    static let shared = Approvals(file: ContextStore.dir.appendingPathComponent("approvals.json"))
+    private let file: URL?
+    private var session = Set<String>()
+    private var stored: Set<String>
+    private let lock = NSLock()
+
+    init(file: URL?) {
+        self.file = file
+        stored = Set(file.flatMap { try? Data(contentsOf: $0) }.flatMap { try? JSONDecoder().decode([String].self, from: $0) } ?? [])
+    }
+
+    func allowed(_ scope: String) -> Bool { lock.withLock { session.contains(scope) || stored.contains(scope) } }
+
+    func grant(_ scope: String, always: Bool) {
+        lock.withLock {
+            session.insert(scope)
+            guard always, let file else { return }
+            stored.insert(scope)
+            try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? JSONEncoder().encode(stored.sorted()).write(to: file)
+        }
+    }
+}
