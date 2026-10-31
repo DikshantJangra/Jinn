@@ -83,7 +83,6 @@ To add a capability: put the macOS plumbing in `Hands/`, wrap it in a `Tool` in 
 
 - `Brain` is a two-method protocol: `chat(messages, tools)` and a `model` name.
 - `OllamaClient` is the default. Every request sets `num_ctx` (16384 unless `JINN_CTX` says otherwise) and `keep_alive: 30m`, and the app warms the model at launch so the first answer isn't slow.
-- `OpenAICompatClient` covers LM Studio, llama.cpp and vLLM when `JINN_BACKEND=openai`.
 - `TextToolCalls` rescues small models that write a call as plain text (`list_dir {"path":"~"}`) instead of using real tool calls.
 - `Compaction` keeps history inside a character budget by clipping old tool output first, then dropping the oldest turns. The system prompt always survives.
 

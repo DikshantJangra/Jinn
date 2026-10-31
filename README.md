@@ -24,7 +24,7 @@ All intelligence runs **100% locally on your laptop** with **zero telemetry or c
 
 ## Key Features
 
-- **100% Local Inference:** Driven by Google Gemma (`gemma4:e4b`, `gemma4:e2b`, `gemma2:2b/9b`) via [Ollama](https://ollama.ai) or any OpenAI-compatible runner (llama.cpp, LM Studio, vLLM).
+- **100% Local Inference:** Driven by Google Gemma (`gemma4:e4b`, `gemma4:e2b`, `gemma2:2b/9b`) via [Ollama](https://ollama.ai).
 - **Floating macOS HUD with 3D Voxel Lamp:** Instant `⌥ + Space` hotkey summons an always-on floating glass panel displaying a real-time, interactive Three.js voxel Genie lamp that visually reacts to agent thinking, voice input, and execution states.
 - **On-Device Voice Interaction:** Speak commands naturally using Apple's private, on-device speech recognition framework (hold `⌥ + Space` to talk, release to execute).
 - **Desktop & Browser Hands:**
@@ -47,7 +47,7 @@ flowchart TD
     
     subgraph "Local Laptop Boundary"
         Agent --> Engine["Gemma Local Engine"]
-        Engine <-->|Localhost HTTP / IPC| Gemma["Google Gemma\n(Ollama / llama.cpp / GGUF)"]
+        Engine <-->|Localhost HTTP / IPC| Gemma["Google Gemma\n(Ollama)"]
         
         Agent --> Tools["Local Tool Execution"]
         Tools --> FInspect["File & Workspace Inspector"]
@@ -138,10 +138,8 @@ All pushes and pull requests to `main` are automatically verified through the [C
 ## Configuration & Environment Variables
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `JINN_MODEL` | `gemma4:e4b` | Primary Gemma model to run via Ollama or custom backend |
+| `JINN_MODEL` | `gemma4:e4b` | Primary Gemma model to run via Ollama |
 | `JINN_BIG_MODEL` | *None* | Escalation model triggered for stalls or deep reasoning tasks |
-| `JINN_BACKEND` | `ollama` | Backend type: `ollama` or `openai` (for LM Studio, llama.cpp, vLLM) |
-| `JINN_BASE_URL` | `http://localhost:11434` | Custom endpoint URL for local inference engine |
 ---
 
 ## Repository Structure

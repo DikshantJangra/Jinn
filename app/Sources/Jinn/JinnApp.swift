@@ -178,11 +178,6 @@ func selfTest() {
     precondition(rc.messages[1]["content"] as? String == "do it" && (rc.messages[2]["content"] as? String)?.hasPrefix("[Progress so far") == true && rc.messages.last?["tool_name"] as? String == "act" && rc.dropped > 0, "digest")
     precondition(estimateTokens("abc") == 1 && estimateTokens([["content": "abcdef"]]) == 6)
 
-    let w = OpenAICompatClient(model: "m", base: URL(string: "http://x")!).wire([
-        ["role": "assistant", "content": "", "tool_calls": [["function": ["name": "t", "arguments": ["a": "b"]]]]],
-        ["role": "tool", "content": "r", "tool_name": "t"]])
-    precondition((w[0]["tool_calls"] as! [Msg])[0]["id"] as? String == w[1]["tool_call_id"] as? String && w[1]["tool_name"] == nil)
-
     let el = AXUIElementCreateSystemWide()
     func node(_ i: Int, _ role: String, _ label: String, _ value: String = "") -> Node {
         Node(index: i, depth: 1, role: role, label: label, value: value, frame: nil, actions: [], el: el)
@@ -299,7 +294,7 @@ func selfTest() {
 
     precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
     precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
-    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["connect_file", "gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file", "undo"])
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["connect_file", "gmail_reply", "remember", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file", "undo", "update_profile"])
     precondition(Web.vet("http://[::ffff:127.0.0.1]/") != nil && Web.vet("http://[::ffff:10.1.2.3]/") != nil && Web.vet("http://[64:ff9b::7f00:1]/") != nil && Web.vet("http://[2002:7f00:1::]/") != nil)
     precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
     precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")
