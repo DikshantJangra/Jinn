@@ -1,7 +1,6 @@
 import Foundation
 
 enum Safety {
-    /// Apps Jinn must never drive: secret stores, the permission UI (self-grant), and terminals (bypass the shell classifier).
     static let blockedApps: Set<String> = [
         "com.apple.keychainaccess", "com.apple.securityagent", "com.apple.passwords", "com.apple.screensharingagent", "com.apple.usernotificationcenter", "com.apple.systempreferences", "com.apple.terminal", "com.googlecode.iterm2",
         "com.1password.1password", "com.agilebits.onepassword7", "com.bitwarden.desktop", "com.dhivio.jinn",
@@ -28,7 +27,7 @@ enum Safety {
     ]
 
     static func shell(_ cmd: String) -> ShellVerdict {
-        let v = ShellSafetyService.check(cmd, projectFolder: NSHomeDirectory()) // tokenized rm/find/chmod/fork-bomb checks, lifted from Agent!
+        let v = ShellSafetyService.check(cmd, projectFolder: NSHomeDirectory())
         if !v.allowed { return .block(v.reason ?? "blocked") }
         for d in dangerous where cmd.range(of: d.pattern, options: [.regularExpression, .caseInsensitive]) != nil {
             return .block(d.why)

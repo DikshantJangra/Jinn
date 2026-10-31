@@ -16,7 +16,6 @@ let chromeTools: [Tool] = [
          params: ["fields": "JSON object, e.g. {\"Email\":\"a@b.com\",\"Gender\":\"Male\"}",
                   "url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm) { a in
         let busy = try await Interrupt.waitIdle(pid: Chrome.pid)
-        // model output is parsed and re-serialized in Swift so it can only reach the page as data, never as code
         guard let obj = (try? JSONSerialization.jsonObject(with: Data(try a.str("fields").utf8))) as? [String: Any]
         else { throw JinnError("fields must be a JSON object mapping label to value, e.g. {\"Email\":\"a@b.com\"}") }
         let data = try JSONSerialization.data(withJSONObject: obj.mapValues { "\($0)" })

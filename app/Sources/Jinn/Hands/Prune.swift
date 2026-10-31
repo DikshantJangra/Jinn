@@ -1,5 +1,3 @@
-// Ported to Swift from mac-cua (https://github.com/hyprcat/mac-cua) app/_lib/pruning.py, Apache License 2.0.
-// Passes kept: merge_labels_with_controls, collapse_into_interactive_parent, merge_adjacent_text, display role map.
 import Foundation
 
 enum Prune {
@@ -16,12 +14,10 @@ enum Prune {
         "AXSearchField": "search field", "AXWebArea": "web area", "AXSplitGroup": "split group",
     ]
 
-    /// Token-efficient role name.
     static func display(_ role: String) -> String {
         roleNames[role] ?? (role.hasPrefix("AX") ? String(role.dropFirst(2)).lowercased() : role.lowercased())
     }
 
-    /// parent -> children indices, derived from preorder + depth.
     static func children(_ n: [Node]) -> [Int: [Int]] {
         var kids: [Int: [Int]] = [:]
         var stack: [Int] = []
@@ -33,12 +29,10 @@ enum Prune {
         return kids
     }
 
-    /// Mutates labels, returns the indices to hide. Indices of surviving nodes never change.
     static func apply(_ n: inout [Node]) -> Set<Int> {
         let kids = children(n)
         var removed = Set<Int>()
 
-        // "Name:" text immediately before an unlabeled control becomes that control's label
         for i in n.indices.dropLast() where !removed.contains(i) {
             let a = n[i], b = n[i + 1]
             if a.role == "AXStaticText", !a.label.isEmpty, interactive.contains(b.role), b.label.isEmpty, a.depth == b.depth {
@@ -47,14 +41,12 @@ enum Prune {
             }
         }
 
-        // a button/row/link whose children are only plain leaves absorbs their text
         for i in n.indices where selectable.contains(n[i].role) {
             guard let ks = kids[i], ks.allSatisfy({ !interactive.contains(n[$0].role) && (kids[$0] ?? []).isEmpty }) else { continue }
             if n[i].label.isEmpty { n[i].label = ks.map { n[$0].label }.filter { !$0.isEmpty }.joined(separator: " ") }
             ks.forEach { removed.insert($0) }
         }
 
-        // runs of sibling text nodes (web pages split text into spans) merge into the first
         for (_, ks) in kids {
             var first: Int?
             for c in ks where !removed.contains(c) {

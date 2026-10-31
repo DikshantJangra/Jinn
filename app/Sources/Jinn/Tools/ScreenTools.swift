@@ -2,10 +2,8 @@ import AppKit
 
 private let appArg = ["app": "(optional) app name; default is the app in front"]
 
-/// Clicks a screen point. `real` moves the visible cursor and clicks through the system (for apps that ignore background clicks).
 private func clickPoint(_ p: CGPoint, app: NSRunningApplication, a: [String: Any]) async throws -> String {
     guard Screen.onScreen(p) else { throw JinnError("(\(Int(p.x)),\(Int(p.y))) is off screen") }
-    // approval was for this app: the point must be inside its window, and for a real click nothing else may cover it
     guard let frame = Screen.windowFrame(app.processIdentifier), frame.contains(p) else { throw JinnError("point is outside \(app.localizedName ?? "the app")'s window") }
     if a.opt("real") == "true", Screen.ownerAt(p) != app.processIdentifier { throw JinnError("another window covers that point; nothing was clicked") }
     let right = a.opt("button") == "right", double = a.opt("double") == "true"

@@ -1,7 +1,5 @@
-// Ported to Swift from mac-cua (https://github.com/hyprcat/mac-cua) app/_lib/keys.py, Apache License 2.0.
 import CoreGraphics
 
-/// xdotool-style combos ("cmd+shift+a", "Return", "ctrl+Left", "C", "@") -> ANSI virtual key code + modifier flags.
 enum Keys {
     private static let map: [String: (CGKeyCode, CGEventFlags)] = {
         var m: [String: (CGKeyCode, CGEventFlags)] = [:]
@@ -40,7 +38,6 @@ enum Keys {
     ]
 
     static func parse(_ combo: String) throws -> (code: CGKeyCode, flags: CGEventFlags) {
-        // a lone "+" is the plus key, not a separator
         let parts = combo == "+" ? ["plus"] : combo.split(separator: "+", omittingEmptySubsequences: true).map(String.init)
         var flags: CGEventFlags = []
         var key: (CGKeyCode, CGEventFlags)?
@@ -51,13 +48,12 @@ enum Keys {
                 throw JinnError("unknown key '\(part)' in '\(combo)' (examples: Return, Tab, cmd+a, ctrl+Left, shift+Tab)")
             }
             key = k
-            if part.count == 1, part.first!.isLetter, part.first!.isUppercase { flags.insert(.maskShift) } // "C" -> shift+c
+            if part.count == 1, part.first!.isLetter, part.first!.isUppercase { flags.insert(.maskShift) }
         }
         guard let key else { throw JinnError("no non-modifier key in '\(combo)'") }
         return (key.0, flags.union(key.1))
     }
 
-    /// Key for one literal character when typing, nil if it has no ANSI key (then it is sent as unicode).
     static func forChar(_ c: Character) -> (code: CGKeyCode, flags: CGEventFlags)? {
         switch c {
         case " ": return try? parse("space")

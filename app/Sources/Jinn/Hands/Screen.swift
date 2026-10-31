@@ -1,7 +1,6 @@
 import AppKit
 import Vision
 
-/// One line of text found on screen. `rect` is in global screen points (top-left origin, same space as AX frames and CGEvents).
 struct Seen {
     let text: String
     let rect: CGRect
@@ -10,23 +9,18 @@ struct Seen {
 
     var center: CGPoint { CGPoint(x: rect.midX, y: rect.midY) }
 
-    /// Box of just `query` inside this line (so "Send" in "Send message to Bob" is clicked, not the line's middle).
     func target(_ query: String) -> CGRect {
         guard let cand, let r = text.range(of: query, options: .caseInsensitive), let b = try? cand.boundingBox(for: r) else { return rect }
         return Screen.globalRect(b.boundingBox, in: region)
     }
 }
 
-/// Pixel-level screen reading for apps whose accessibility tree is empty or useless (canvas, games, remote desktops, images).
-/// Capture is a window screenshot, decoding is Apple's on-device Vision OCR: no model, no network.
 enum Screen {
-    /// Vision boxes are normalized with a bottom-left origin; screen points are top-left.
     static func globalRect(_ n: CGRect, in region: CGRect) -> CGRect {
         CGRect(x: region.minX + n.minX * region.width, y: region.minY + (1 - n.maxY) * region.height,
                width: n.width * region.width, height: n.height * region.height)
     }
 
-    /// Exact (case-insensitive) line matches win over substring matches; `nth` is 1-based in reading order.
     static func find(_ items: [Seen], _ query: String, nth: Int = 1) -> (hit: Seen, total: Int)? {
         let q = query.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         guard !q.isEmpty else { return nil }
@@ -36,7 +30,6 @@ enum Screen {
         return (hits[nth - 1], hits.count)
     }
 
-    /// Front-most on-screen window of the app, from the window server (works without Accessibility).
     static func windowFrame(_ pid: pid_t) -> CGRect? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowOwnerPID as String] as? pid_t) == pid && (w[kCGWindowLayer as String] as? Int) == 0 {
@@ -47,7 +40,6 @@ enum Screen {
         return nil
     }
 
-    /// Owner of the front-most normal window under `p` (the window list is ordered front to back).
     static func ownerAt(_ p: CGPoint) -> pid_t? {
         let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? []
         for w in list where (w[kCGWindowLayer as String] as? Int) == 0 {
@@ -72,7 +64,6 @@ enum Screen {
         return img
     }
 
-    /// OCR of the app's front window, in reading order (top to bottom, then left to right).
     static func read(_ app: NSRunningApplication) async throws -> (region: CGRect, items: [Seen]) {
         guard let region = windowFrame(app.processIdentifier) else { throw JinnError("\(app.localizedName ?? "app") has no visible window to read") }
         let img = try capture(region)
@@ -100,14 +91,12 @@ enum Screen {
         return out.isEmpty ? "(no text recognised)" : out.joined(separator: "\n")
     }
 
-    /// What appeared / disappeared between two reads: the verification signal after a pixel-level action.
     static func diff(_ old: [Seen], _ new: [Seen]) -> String {
         let a = Set(old.map(\.text)), b = Set(new.map(\.text))
         let lines = b.subtracting(a).sorted().prefix(8).map { "+ \"\($0.prefix(60))\"" } + a.subtracting(b).sorted().prefix(4).map { "- \"\($0.prefix(60))\"" }
         return lines.isEmpty ? "No visible change (the click may not have taken effect)." : "Changed:\n" + lines.joined(separator: "\n")
     }
 
-    /// Moves the visible cursor in a short glide, tagged so the interruption monitor does not mistake it for the user.
     static func glide(to p: CGPoint) async {
         let from = CGEvent(source: nil)?.location ?? p
         for i in 1...12 {
