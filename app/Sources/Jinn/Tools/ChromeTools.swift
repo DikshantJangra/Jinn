@@ -5,18 +5,6 @@ extension Chrome {
     static let risky = try! NSRegularExpression(pattern: "\\b(send|submit|pay|buy|purchase|delete|remove|confirm|place order|post|publish)\\b", options: .caseInsensitive)
 }
 
-extension Chrome {
-    /// Appends what me.md already answers for the questions on the page, so the model fills them instead of asking.
-    static func withProfileHints(_ status: String) async -> String {
-        guard let d = status.data(using: .utf8), let o = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-              let qs = o["questions"] as? [[String: Any]] else { return status }
-        let open = qs.filter { $0["answered"] as? Bool != true }.compactMap { $0["question"] as? String }
-        let hints = await ContextStore.shared.hints(forQuestions: open)
-        guard !hints.isEmpty else { return status }
-        return status + "\nProfile hints (from me.md; check each fits the question): " + hints.map { "\"\($0.question)\" -> \"\($0.answer)\"" }.joined(separator: "; ")
-    }
-}
-
 let chromeTools: [Tool] = [
     Tool(name: "chrome_tabs", description: "List the open Chrome tabs (title | url). Use a part of the url or title as url_contains in the other chrome tools.", risk: .confirm) { _ in
         try await Chrome.tabs()
@@ -35,7 +23,7 @@ let chromeTools: [Tool] = [
             try await Task.sleep(nanoseconds: 700_000_000)
             for h in (hint.isEmpty ? [""] : [hint, ""]) {
                 guard let r = try? await Chrome.eval(Chrome.run("document.readyState==='complete'?JSON.stringify(status()):'loading'"), tab: h), r != "loading" else { continue }
-                if r.contains("\"questions\":[{") { return await Chrome.withProfileHints(r) }
+                if r.contains("\"questions\":[{") { return r }
                 last = r
             }
         }
@@ -44,7 +32,7 @@ let chromeTools: [Tool] = [
     },
     Tool(name: "chrome_read_form", description: "List the questions on the current Chrome page (Google Form or any web form): id, question, kind (text, paragraph, radio, checkbox, dropdown, select, date, time), options, required, answered, plus unanswered_required and the Next/Back/Submit buttons.",
          params: ["url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm) { a in
-        await Chrome.withProfileHints(try await retry(2, base: 0.5) { try await Chrome.eval(Chrome.run("JSON.stringify(status())"), tab: a.opt("url_contains")) })
+        try await retry(2, base: 0.5) { try await Chrome.eval(Chrome.run("JSON.stringify(status())"), tab: a.opt("url_contains")) }
     },
     Tool(name: "chrome_fill_form", description: "Fill several questions at once on a Chrome page, without taking focus. Keys are question text (approximate is fine, matched fuzzily) or #id from chrome_read_form. Text: the answer. Radio/dropdown: the option text. Checkboxes: options comma separated. Dates: YYYY-MM-DD. Returns per-question results plus what is still unanswered; fix any 'not found' by using the listed questions/options, do not ask the user. Does not submit.",
          params: ["fields": "JSON object, e.g. {\"Email\":\"a@b.com\",\"#3\":\"Male\"}",

@@ -52,16 +52,8 @@ struct OllamaClient: Brain {
 
     func warm() async { _ = try? await post("api/generate", ["model": model, "keep_alive": "30m"]) }
 
-    static let embedModel = "nomic-embed-text"
-
-    /// One batched call. nomic-embed-text was trained with task prefixes and Ollama does not add them,
-    /// so queries and stored text must be marked differently or retrieval quality drops.
-    func embed(_ texts: [String], query: Bool) async throws -> [[Float]] {
-        guard !texts.isEmpty else { return [] }
-        let prefix = query ? "search_query: " : "search_document: "
-        let res = try await post("api/embed", ["model": Self.embedModel, "input": texts.map { prefix + $0 }, "keep_alive": "30m"])
-        let out = (res["embeddings"] as? [[Double]] ?? []).map { $0.map(Float.init) }
-        guard out.count == texts.count else { throw JinnError("embedding model returned \(out.count) vectors for \(texts.count) texts (ollama pull \(Self.embedModel))") }
-        return out
+    func embed(_ text: String) async throws -> [Float] {
+        let res = try await post("api/embeddings", ["model": "nomic-embed-text", "prompt": text, "keep_alive": "30m"])
+        return (res["embedding"] as? [Double] ?? []).map(Float.init)
     }
 }
