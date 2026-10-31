@@ -8,10 +8,12 @@ struct Reply {
     let text: String
     let calls: [ToolCall]
     var truncated = false
+    var promptTokens: Int?  // what the server counted for the prompt: calibrates our estimate and drives the HUD meter
 }
 
 protocol Brain {
     var model: String { get }
+    var contextLimit: Int { get }
     func chat(_ messages: [Msg], tools: [[String: Any]]) async throws -> Reply
 }
 

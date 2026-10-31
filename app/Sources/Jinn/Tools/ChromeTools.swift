@@ -107,6 +107,15 @@ let chromeTools: [Tool] = [
         let sent = try await js("gSend()")
         guard sent.hasPrefix("clicked") else { throw JinnError("typed the reply but \(sent)") }
         let closed = (try? await wait("the reply to send", "!gBody()", 6)) != nil
+        let sentAt = Date()
+        if closed {
+            Undo.shared.record("Gmail reply to \(find.isEmpty ? "the open email" : find)") {
+                guard Date().timeIntervalSince(sentAt) < 25 else { throw JinnError("Gmail's undo window has passed; the reply is delivered") }
+                let r = try await js("clickT('Undo')")
+                guard r.hasPrefix("clicked") else { throw JinnError("Gmail no longer offers Undo for it") }
+                return "pulled the reply back (it reopens as a draft)"
+            }
+        }
         return (closed ? "Reply sent." : "Pressed Send but the reply box is still open; ask the user to check Gmail.") + Interrupt.note(busy)
     },
 ]

@@ -34,6 +34,13 @@ final class Agent {
     let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
     let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
     var history: [Msg] = []
+    /// One line per turn that fell out of `history`, so a long conversation keeps its thread.
+    var earlier: [String] = []
+    /// Reports (tokens in the prompt, window size) after every model call: the HUD context meter.
+    var onContext: (@Sendable (Int, Int) -> Void)?
+    /// Our token estimate x calib = the server's count; refined from prompt_eval_count.
+    private var calib = 1.0
+    private lazy var schemaTokens = tokens(String(decoding: (try? JSONSerialization.data(withJSONObject: schemas)) ?? Data(), as: UTF8.self))
     var confirm: (@Sendable (ConfirmRequest) async -> Decision)?
 
     private func authorize(_ tool: Tool, _ args: [String: Any], _ summary: String) async -> String? {
@@ -56,7 +63,7 @@ final class Agent {
     }
 
     func run(_ text: String, emit: @escaping @Sendable (String) -> Void) async -> String {
-        let ctx = await ContextStore.shared.context(for: text)
+        let ctx = await ContextStore.shared.context(for: text) + (earlier.isEmpty ? "" : "\n\nEarlier in this conversation:\n" + earlier.suffix(12).joined(separator: "\n"))
         var messages: [Msg] = [["role": "system", "content": systemPrompt(ctx)]] + history.suffix(20)
             + [["role": "user", "content": text]]
         var brain = small
@@ -71,14 +78,23 @@ final class Agent {
 
         var failed = Set<String>()
         var lastSig = "", repeats = 0, nudges = 0, checks = 0, acted = false
+        var usedTools: [String] = []
         var evidence = Evidence.none
         var limit = maxRounds, round = 0
         while round < limit {
             round += 1
-            messages = compact(messages)
+            // window = prompt + tool schemas + room for the answer; the estimate is scaled by what the server really counted
+            let room = Double(brain.contextLimit - 2300) / calib - Double(schemaTokens)
+            let c = compact(messages, task: text, budget: max(1500, Int(room)))
+            messages = c.messages
+            if c.dropped > 0 { emit("context: compacted \(c.dropped) old messages") }
             let r: Reply
             do { r = try await brain.chat(messages, tools: schemas) }
             catch { return error.localizedDescription }
+            if let p = r.promptTokens {
+                calib = min(2.5, max(0.4, Double(p) / Double(tokens(messages) + schemaTokens)))
+                onContext?(p, brain.contextLimit)
+            } else { onContext?(Int(Double(tokens(messages) + schemaTokens) * calib), brain.contextLimit) }
             messages.append(r.msg)
             if r.calls.isEmpty {
                 if nudges < 2, let fix = loopCorrection(text: r.text, truncated: r.truncated, acted: acted) {
@@ -94,7 +110,12 @@ final class Agent {
                     continue
                 }
                 let answer = r.text.isEmpty ? "Done." : r.text // Ollama rejects empty assistant turns
-                history += [["role": "user", "content": text], ["role": "assistant", "content": answer]]
+                let used = Dictionary(grouping: usedTools, by: { $0 }).map { "\($0.key)×\($0.value.count)" }.sorted().joined(separator: ", ")
+                history += [["role": "user", "content": text], ["role": "assistant", "content": answer + (used.isEmpty ? "" : "\n[tools used: \(used)]")]]
+                while history.count > 20 { // fold the oldest turn into a one-line memory instead of forgetting it
+                    let q = (history.removeFirst()["content"] as? String ?? "").prefix(80), a = (history.removeFirst()["content"] as? String ?? "").prefix(100)
+                    earlier.append("- asked: \(q) / you: \(a.replacingOccurrences(of: "\n", with: " "))")
+                }
                 return answer
             }
             acted = true
@@ -104,6 +125,7 @@ final class Agent {
                 repeats = sig == lastSig ? repeats + 1 : 0
                 lastSig = sig
                 emit("-> \(call.name) \(argJSON)")
+                usedTools.append(call.name)
                 var result: String
                 let t0 = Date()
                 if failed.contains(sig) || repeats >= 2 {
@@ -121,7 +143,10 @@ final class Agent {
                     else if let refusal = await authorize(tool, args, "\(call.name) \(argJSON)") { result = refusal }
                     else {
                         // a success may change state (open_app, then app_state again), so earlier failures may now work
-                        do { result = try await tool.run(args); failed.removeAll() }
+                        do {
+                            result = try await tool.run(args); failed.removeAll()
+                            if let what = irreversibleLabel(tool: call.name, args: args) { Undo.shared.record(what) } // no undo closure: undo will say so
+                        }
                         catch { result = "error: \(explain(error))"; failed.insert(sig) }
                     }
                 } else {

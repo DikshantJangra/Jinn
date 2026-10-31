@@ -4,7 +4,9 @@ let appTools: [Tool] = [
     Tool(name: "open_app", description: "Open a Mac app by name, e.g. WhatsApp, Mail, Safari. Brought to front unless background is true.",
          params: ["name": "App name", "background": "(optional) true to launch without taking focus, when you only need to drive it"]) { a in
         let name = try a.str("name")
+        let wasRunning = (try? Apps.resolve(name)) != nil
         try Apps.launch(name, background: a.opt("background") == "true")
+        if !wasRunning { Undo.shared.record("opened \(name)") { try await Task.sleep(nanoseconds: 300_000_000); (try Apps.resolve(name)).terminate(); return "quit it again" } }
         for _ in 0..<25 where (try? Apps.resolve(name)) == nil { try await Task.sleep(nanoseconds: 200_000_000) }
         return "Opened \(name)."
     },

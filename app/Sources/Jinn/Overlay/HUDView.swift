@@ -10,6 +10,10 @@ final class HUDModel: ObservableObject {
     @Published var speaking = false
     @Published var focusTick = 0
     @Published var buildTick = 0
+    /// false = just the lamp in the corner (voice only); true = zoomed to the centre with typing and replies.
+    @Published var expanded = false
+    /// Tokens in the last prompt and the model's window: the context meter.
+    @Published var ctx: (used: Int, limit: Int)?
     @Published var pending: ConfirmRequest?
     @Published var needsAX = !AXIsProcessTrusted()
     private var answer: CheckedContinuation<Decision, Never>?
@@ -22,6 +26,8 @@ final class HUDModel: ObservableObject {
         }
         speech.onChange = { [weak self] on in self?.speaking = on }
         agent.confirm = { [weak self] req in await self?.ask(req) ?? .deny }
+        dictation.onAutoStop = { [weak self] in Task { @MainActor in self?.finishListening() } }
+        agent.onContext = { [weak self] u, l in Task { @MainActor in self?.ctx = (u, l) } }
     }
 
     private func ask(_ req: ConfirmRequest) async -> Decision {
@@ -56,6 +62,12 @@ final class HUDModel: ObservableObject {
     func submit(_ text: String) {
         let q = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !busy, !q.isEmpty else { return }
+        // "undo" is answered straight from the journal: instant, and it cannot be misheard into something else
+        if ["undo", "undo that", "undo it", "revert", "revert that", "take that back", "go back"].contains(q.lowercased().trimmingCharacters(in: .punctuationCharacters)) {
+            busy = true; trace = []
+            Task { let r = await Undo.shared.undo(); reply = r; busy = false; speech.say(r) }
+            return
+        }
         busy = true; trace = []; reply = ""
         Task {
             let r = await agent.run(q) { [weak self] line in Task { @MainActor in self?.trace.append(line) } }
@@ -74,16 +86,27 @@ struct HUDView: View {
     var body: some View {
         VStack(spacing: 6) {
             LampView(state: m.lamp, build: m.buildTick) { m.toggleVoice() }
-                .frame(width: 260, height: 260)
-                .help("Tap the lamp to talk. Drag to turn it.")
-            content
+                .frame(width: m.expanded ? 260 : 130, height: m.expanded ? 260 : 130)
+                .help("Click the lamp to talk. Drag to turn it.")
+                .overlay(alignment: .topTrailing) {
+                    Button { HUDController.shared.toggle() } label: {
+                        Image(systemName: m.expanded ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+                            .font(.system(size: 11, weight: .semibold)).padding(7)
+                            .background(.ultraThinMaterial, in: Circle())
+                    }
+                    .buttonStyle(.plain).disabled(m.pending != nil)
+                    .help(m.expanded ? "Back to the corner (Esc)" : "Open Jinn to type")
+                }
+            if m.expanded { content }
         }
-        .padding(.horizontal, 56).padding(.vertical, 40)
-        .frame(width: 560)
-        .background(
-            Rectangle().fill(.ultraThinMaterial)
-                .mask(RoundedRectangle(cornerRadius: 120).padding(34).blur(radius: 34))
-        )
+        .padding(.horizontal, m.expanded ? 56 : 10).padding(.vertical, m.expanded ? 40 : 10)
+        .frame(width: m.expanded ? 560 : 150)
+        .background {
+            if m.expanded {
+                Rectangle().fill(.ultraThinMaterial)
+                    .mask(RoundedRectangle(cornerRadius: 120).padding(34).blur(radius: 34))
+            }
+        }
         .onChange(of: m.focusTick) { _ in focused = true }
     }
 
@@ -119,6 +142,11 @@ struct HUDView: View {
             Button { modeRaw = modeRaw == "auto" ? "ask" : "auto" } label: {
                 Text(modeRaw == "auto" ? "Auto: acts without asking, except shell and messages (click to switch)" : "Ask: confirms actions (click for Auto)").font(.caption2)
             }.buttonStyle(.plain).foregroundStyle(.secondary)
+            if let c = m.ctx, c.limit > 0 {
+                let pct = min(100, c.used * 100 / c.limit)
+                Text("Context \(pct)%  \(c.used)/\(c.limit) tokens\(pct >= 80 ? "  (older steps are being compacted)" : "")").font(.caption2)
+                    .foregroundStyle(pct >= 80 ? .orange : .secondary)
+            }
             if !m.trace.isEmpty {
                 DisclosureGroup("Trace (\(m.trace.count))") {
                     ScrollView {

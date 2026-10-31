@@ -56,16 +56,26 @@ let systemTools: [Tool] = [
         if fm.fileExists(atPath: path) {
             if mode == "append" {
                 let h = try FileHandle(forWritingTo: url); defer { try? h.close() }
-                try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8)); return "Appended to \(url.lastPathComponent)."
+                let was = try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8))
+                Undo.shared.record("appended to \(url.lastPathComponent)") { let w = try FileHandle(forWritingTo: url); defer { try? w.close() }; try w.truncate(atOffset: was); return "removed the appended text" }
+                return "Appended to \(url.lastPathComponent)."
             }
             guard mode == "overwrite" else { throw JinnError("\(url.lastPathComponent) exists; use mode append or overwrite") }
+            let backup = undoDir.appendingPathComponent(UUID().uuidString)
+            try fm.copyItem(at: url, to: backup)
+            Undo.shared.record("overwrote \(url.lastPathComponent)") { try Data(contentsOf: backup).write(to: url); return "restored the previous content" }
+        } else {
+            Undo.shared.record("created \(url.lastPathComponent)") { try trash(path); return "moved it to the Trash" }
         }
         try text.write(to: url, atomically: true, encoding: .utf8)
         return "Wrote \(url.lastPathComponent) (\(text.count) characters)."
     },
 
     Tool(name: "make_folder", description: "Create a folder (and parents).", params: ["path": "Folder path, ~ allowed"], risk: .confirm) { a in
-        try FileManager.default.createDirectory(atPath: try safePath(a.str("path")), withIntermediateDirectories: true)
+        let p = try safePath(a.str("path"))
+        let existed = FileManager.default.fileExists(atPath: p)
+        try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true)
+        if !existed { Undo.shared.record("created folder \((p as NSString).lastPathComponent)") { try trash(p); return "moved it to the Trash" } }
         return "Created."
     },
 
@@ -74,11 +84,14 @@ let systemTools: [Tool] = [
         try vetWrite(to.path)
         try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(atPath: try safePath(a.str("from")), toPath: to.path)
+        Undo.shared.record("copied to \(to.lastPathComponent)") { try trash(to.path); return "moved the copy to the Trash" }
         return "Copied."
     },
 
     Tool(name: "trash_file", description: "Move a file or folder to the Trash (recoverable). Never deletes permanently.", params: ["path": "File or folder path, ~ allowed"], risk: .confirm, alwaysAsk: true) { a in
-        try FileManager.default.trashItem(at: URL(fileURLWithPath: try safePath(a.str("path"))), resultingItemURL: nil)
+        let p = try safePath(a.str("path"))
+        let gone = try trash(p)
+        Undo.shared.record("trashed \((p as NSString).lastPathComponent)", undo: gone.map { g in { try moveBack(g.path, p) } })
         return "Moved to Trash."
     },
 
@@ -87,8 +100,10 @@ let systemTools: [Tool] = [
     },
 
     Tool(name: "clipboard_set", description: "Put text on the clipboard so the user (or paste via press_key cmd+v) can use it.", params: ["text": "Text to copy"], risk: .confirm) { a in
+        let was = NSPasteboard.general.string(forType: .string)
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(try a.str("text"), forType: .string)
+        Undo.shared.record("set the clipboard") { NSPasteboard.general.clearContents(); if let was { NSPasteboard.general.setString(was, forType: .string) }; return "restored the old clipboard" }
         return "Copied to clipboard."
     },
 

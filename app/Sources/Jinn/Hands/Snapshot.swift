@@ -32,7 +32,7 @@ final class Snapshot {
     static func latest(_ pid: pid_t) -> Snapshot? { lock.withLock { latest[pid] } }
 
     @discardableResult
-    static func take(_ app: NSRunningApplication) async throws -> Snapshot {
+    static func take(_ app: NSRunningApplication, main: Bool = false) async throws -> Snapshot {
         guard AXIsProcessTrusted() else { throw JinnError.permission("Accessibility") }
         // Chromium builds its web accessibility tree lazily: ask once, give it a moment, or the page looks empty
         if Chrome.isBrowser(app), lock.withLock({ woken.insert(app.processIdentifier).inserted }) {
@@ -45,7 +45,7 @@ final class Snapshot {
             let root = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(root, 2)
             AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, true as CFBoolean)
-            let win = AX.window(root)
+            let win = main ? AX.largestWindow(root) : AX.window(root)
             var nodes: [Node] = []
             var stack: [(AXUIElement, Int)] = [(win, 0)]
             while let (e, d) = stack.popLast(), nodes.count < 3000 {

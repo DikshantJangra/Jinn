@@ -66,6 +66,29 @@ enum AX {
         return AXValueGetValue(unsafeBitCast(v as AnyObject, to: AXValue.self), .cgSize, &s) ? s : nil
     }
 
+    static func area(_ w: AXUIElement) -> CGFloat {
+        guard let s = size(batch(w)[kAXSizeAttribute]) else { return 0 }
+        return s.width * s.height
+    }
+
+    /// The app's biggest window (the real content), even when a small panel such as a contact card has focus.
+    static func largestWindow(_ app: AXUIElement) -> AXUIElement {
+        let ws = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        return ws.max { area($0) < area($1) } ?? window(app)
+    }
+
+    /// Presses the close button of every window except the biggest. Returns how many were closed.
+    @discardableResult
+    static func closeExtraWindows(_ app: AXUIElement) -> Int {
+        let ws = (attr(app, kAXWindowsAttribute) as? [AXUIElement]) ?? []
+        guard ws.count > 1, let main = ws.max(by: { area($0) < area($1) }) else { return 0 }
+        var n = 0
+        for w in ws where !CFEqual(w, main) {
+            if let b = attr(w, kAXCloseButtonAttribute), AXUIElementPerformAction(b as! AXUIElement, kAXPressAction as CFString) == .success { n += 1 }
+        }
+        return n
+    }
+
     static func window(_ app: AXUIElement) -> AXUIElement {
         for k in [kAXFocusedWindowAttribute, kAXMainWindowAttribute] { if let w = attr(app, k) { return w as! AXUIElement } }
         if let ws = attr(app, kAXWindowsAttribute) as? [AXUIElement], let f = ws.first { return f }

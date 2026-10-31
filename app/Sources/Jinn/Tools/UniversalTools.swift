@@ -175,6 +175,7 @@ let universalTools: [Tool] = [
         switch Observed.current {
         case .web:
             out = try await webAct(action, target: target, label: label, text: text)
+            if action == "type" { recordTyping(Chrome.pid, name) }
         case .ocr:
             switch action {
             case "click": out = try await tool("click_text").run(["app": name, "text": label.isEmpty ? target : label])
