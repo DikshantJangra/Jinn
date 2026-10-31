@@ -5,19 +5,25 @@ enum Chrome {
         String(decoding: (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8), as: UTF8.self).dropFirst().dropLast().description
     }
 
-    static let fields = "(()=>[...document.querySelectorAll('input,textarea,select,[role=radio],[role=checkbox]')].filter(e=>!['hidden','submit','button'].includes(e.type)&&e.offsetParent!==null))"
-    static let label = """
-    (e=>{const t=n=>(n&&n.textContent||'').trim();const lb=e.getAttribute('aria-labelledby');
-    return (lb&&lb.split(' ').map(i=>t(document.getElementById(i))).join(' ').trim())||e.getAttribute('aria-label')||e.getAttribute('data-value')||(e.id&&t(document.querySelector('label[for="'+e.id+'"]')))||t(e.closest('label'))||e.placeholder||e.name||''})
-    """
+    /// Chromium browsers that share Chrome's AppleScript dictionary (execute javascript) and DevTools protocol.
+    static let browserIDs = ["com.google.chrome", "company.thebrowser.browser", "com.brave.browser", "com.microsoft.edgemac", "com.vivaldi.vivaldi", "com.operasoftware.opera"]
+    static func isBrowser(_ a: NSRunningApplication) -> Bool { browserIDs.contains { a.bundleIdentifier?.lowercased().hasPrefix($0) == true } }
 
-    static let group = "(e=>{const c=e.closest('[role=listitem],fieldset');const h=c&&c.querySelector('[role=heading],legend');return h?h.textContent.trim():''})"
-
-    static var pid: pid_t {
-        NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier?.hasPrefix("com.google.Chrome") == true }?.processIdentifier ?? 0
+    /// The browser to drive: the one in front if it is Chromium-based (Arc, Brave, Edge...), else the first one running.
+    static var app: NSRunningApplication? {
+        if let f = NSWorkspace.shared.frontmostApplication, isBrowser(f) { return f }
+        return NSWorkspace.shared.runningApplications.first(where: isBrowser)
     }
+    static var pid: pid_t { app?.processIdentifier ?? 0 }
+    static var appName: String { app?.localizedName ?? "Google Chrome" }
 
     static func eval(_ js: String, tab: String = "") async throws -> String {
+        // a tab hint must pick exactly one tab: page titles are attacker-controlled, so a first-match guess could hit the wrong page
+        if !tab.isEmpty {
+            let hits = try await tabs().split(separator: "\n").filter { $0.contains(tab) }
+            if hits.isEmpty { throw JinnError("no Chrome tab matches \"\(tab)\"; call chrome_tabs") }
+            if hits.count > 1 { throw JinnError("\(hits.count) Chrome tabs match \"\(tab)\": \(hits.prefix(4).joined(separator: " || ")). Use a more specific url_contains") }
+        }
         guard let data = try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:9222/json")!).0 else {
             return try await withTimeout(15, "Chrome page script") { try viaAppleScript(js, tab) }
         }
@@ -32,11 +38,12 @@ enum Chrome {
     }
 
     static func viaAppleScript(_ js: String, _ tab: String) throws -> String {
-        guard pid != 0 else { throw JinnError("Chrome is not running; open_app Chrome first") }
+        guard pid != 0 else { throw JinnError("no Chromium browser (Chrome, Arc, Brave, Edge) is running; open_app one first") }
+        let browser = AppleScript.esc(appName)
         let want = AppleScript.esc(tab)
         do {
             return try AppleScript.run("""
-            tell application "Google Chrome"
+            tell application "\(browser)"
               set tgt to missing value
               if "\(want)" is not "" then
                 repeat with w in windows
@@ -57,7 +64,7 @@ enum Chrome {
             """)
         } catch {
             if error.localizedDescription.contains("turned off") || error.localizedDescription.contains("Apple Events") {
-                throw JinnError("Chrome blocks scripting. Ask the user to enable Chrome menu View > Developer > Allow JavaScript from Apple Events, then retry.")
+                throw JinnError("\(appName) blocks scripting. Ask the user to enable it in the browser menu bar: View (or Tools) > Developer > Allow JavaScript from Apple Events, then retry. Until then use look/act, which fall back to the accessibility tree and OCR.")
             }
             throw error
         }
@@ -71,7 +78,7 @@ enum Chrome {
             return all.filter { $0["type"] as? String == "page" }.map { "\($0["title"] ?? "") | \($0["url"] ?? "")" }.joined(separator: "\n")
         }
         return try AppleScript.run("""
-        tell application "Google Chrome"
+        tell application "\(AppleScript.esc(appName))"
           set out to ""
           repeat with w in windows
             repeat with t in tabs of w

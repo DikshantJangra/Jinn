@@ -21,6 +21,11 @@ def main():
     audit_parser = subparsers.add_parser("audit", help="Run local audit of current directory")
     audit_parser.add_argument("--dir", default=".", help="Directory to audit")
 
+    # Command: act
+    act_parser = subparsers.add_parser("act", help="Control this Mac (apps, web forms) to complete a task")
+    act_parser.add_argument("task", type=str, help="What to do, e.g. 'fill the google form in Chrome'")
+
+    # Command: info
     subparsers.add_parser("info", help="Display local environment telemetry and Gemma status")
 
     args = parser.parse_args()
@@ -37,6 +42,10 @@ def main():
         print(f"🧞 [Jinn] Running local workspace audit on: {args.dir}...\n")
         res = agent.execute_local_audit(args.dir)
         print(json.dumps(res, indent=2))
+
+    elif args.command == "act":
+        ask = lambda name, a: input(f"Jinn wants to run {name} with:\n{json.dumps(a, indent=2)}\nAllow? [y/N] ").strip().lower() == "y"  # noqa: E731  full args, never truncated
+        print(json.dumps(agent.act(args.task, confirm=ask), indent=2))
 
     elif args.command == "info":
         print("🧞 [Jinn] System & Engine Telemetry:")
