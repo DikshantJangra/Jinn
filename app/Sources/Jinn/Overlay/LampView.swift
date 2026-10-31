@@ -1,7 +1,6 @@
 import SwiftUI
 import WebKit
 
-/// Where the voxel lamp page lives: the app bundle, else the source tree (swift run / CI).
 let lampDir: URL = {
     if let r = Bundle.main.resourceURL?.appendingPathComponent("lamp"), FileManager.default.fileExists(atPath: r.appendingPathComponent("lamp.html").path) { return r }
     return URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -10,11 +9,9 @@ let lampDir: URL = {
 
 enum LampState: String { case idle, listening, thinking, speaking }
 
-/// The genie-and-lamp face of the HUD: a transparent WKWebView running the bundled three.js scene (offline).
-/// Drag to rotate; a tap is reported through `onTap`.
 struct LampView: NSViewRepresentable {
     let state: LampState
-    let build: Int // bump to replay the block-by-block build-up
+    let build: Int
     let onTap: () -> Void
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
@@ -31,7 +28,7 @@ struct LampView: NSViewRepresentable {
         let cfg = WKWebViewConfiguration()
         cfg.userContentController.add(context.coordinator, name: "jinn")
         let w = WKWebView(frame: .zero, configuration: cfg)
-        w.setValue(false, forKey: "drawsBackground") // transparent over the HUD material
+        w.setValue(false, forKey: "drawsBackground")
         context.coordinator.web = w
         w.navigationDelegate = context.coordinator
         w.loadFileURL(lampDir.appendingPathComponent("lamp.html"), allowingReadAccessTo: lampDir)
@@ -43,7 +40,7 @@ struct LampView: NSViewRepresentable {
         context.coordinator.push(state)
         if build != context.coordinator.lastBuild {
             context.coordinator.lastBuild = build
-            if context.coordinator.ready { w.evaluateJavaScript("window.jinn&&jinn.build()") } // before ready the page builds on load
+            if context.coordinator.ready { w.evaluateJavaScript("window.jinn&&jinn.build()") }
         }
     }
 }

@@ -13,12 +13,11 @@ final class HUDPanel: NSPanel {
         isMovableByWindowBackground = true
         isOpaque = false
         backgroundColor = .clear
-        hasShadow = false // a window shadow would outline the invisible box
+        hasShadow = false
         contentView = view
     }
-    override var canBecomeKey: Bool { true }   // can type into it
-    override var canBecomeMain: Bool { false } // but never steals "main app" from what you're doing
-    /// Escape anywhere in the panel (not only inside the text field) closes it.
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { HUDController.shared.hide() }
 }
 
@@ -39,7 +38,7 @@ final class HUDController {
             placed = true
             obs = model.objectWillChange.sink { [weak self] _ in DispatchQueue.main.async { self?.fit() } }
         }
-        if fresh { // centered on the active screen, lamp near the middle; replay the build-up
+        if fresh {
             let s = host.fittingSize
             let f = (NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main)?.visibleFrame ?? .zero
             panel.setFrame(NSRect(x: f.midX - s.width / 2, y: f.midY + 230 - s.height, width: s.width, height: s.height), display: true)
@@ -50,7 +49,6 @@ final class HUDController {
         model.focusTick += 1
     }
 
-    /// Hiding with a question open counts as Deny; otherwise the agent waits forever and the HUD stays busy.
     func hide() {
         if model.pending != nil { model.decide(.deny) }
         model.cancelListening(); model.speech.stop()
@@ -58,7 +56,6 @@ final class HUDController {
     }
     func toggle() { visible ? hide() : show() }
 
-    /// Grow/shrink with content, keeping the top edge fixed.
     private func fit() {
         let s = host.fittingSize
         var f = panel.frame

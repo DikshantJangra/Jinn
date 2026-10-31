@@ -5,7 +5,6 @@ enum Apps {
         NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
     }
 
-    /// Match by exact name, bundle id, then substring. Blocked apps are refused here, once, for every Hands caller.
     static func resolve(_ name: String) throws -> NSRunningApplication {
         let l = name.lowercased()
         guard l.count >= 2 else { throw JinnError("app name required (at least 2 characters)") }
@@ -17,7 +16,6 @@ enum Apps {
         return a
     }
 
-    /// The named app, or the one the user is looking at when no name is given (Jinn's own HUD never takes focus).
     static func target(_ name: String) throws -> NSRunningApplication {
         if !name.isEmpty { return try resolve(name) }
         guard let a = NSWorkspace.shared.frontmostApplication, a.bundleIdentifier != Bundle.main.bundleIdentifier else { throw JinnError("no app in front; name one") }
@@ -25,7 +23,6 @@ enum Apps {
         return a
     }
 
-    /// Launches an installed app by name. Names only: no paths, no option-like values, and the same blocked-app list as everywhere else.
     static func launch(_ name: String, background: Bool = false) throws {
         let n = name.trimmingCharacters(in: .whitespaces)
         guard n.count >= 2, !n.contains("/"), !n.hasPrefix("-"), !n.lowercased().hasSuffix(".app") else { throw JinnError("give the app's name, like WhatsApp") }

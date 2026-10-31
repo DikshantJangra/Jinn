@@ -1,29 +1,22 @@
 import AppKit
 
-/// Drives Chrome without taking focus. Preferred: the DevTools port (Chrome started with --remote-debugging-port=9222
-/// and a non-default --user-data-dir). Fallback: AppleScript against the user's normal Chrome, which needs
-/// View > Developer > Allow JavaScript from Apple Events; that way their signed-in tabs (Google Forms) just work.
 enum Chrome {
     static func jsString(_ s: String) -> String {
         String(decoding: (try? JSONSerialization.data(withJSONObject: [s])) ?? Data("[\"\"]".utf8), as: UTF8.self).dropFirst().dropLast().description
     }
 
-    /// JS: visible form controls on the page.
     static let fields = "(()=>[...document.querySelectorAll('input,textarea,select,[role=radio],[role=checkbox]')].filter(e=>!['hidden','submit','button'].includes(e.type)&&e.offsetParent!==null))"
-    /// JS: best human label for a control (aria-labelledby, aria-label, <label for>, wrapping label, placeholder, name).
     static let label = """
     (e=>{const t=n=>(n&&n.textContent||'').trim();const lb=e.getAttribute('aria-labelledby');
     return (lb&&lb.split(' ').map(i=>t(document.getElementById(i))).join(' ').trim())||e.getAttribute('aria-label')||e.getAttribute('data-value')||(e.id&&t(document.querySelector('label[for="'+e.id+'"]')))||t(e.closest('label'))||e.placeholder||e.name||''})
     """
 
-    /// JS: the question a control belongs to (Google Forms: the listitem heading), for radios and checkboxes.
     static let group = "(e=>{const c=e.closest('[role=listitem],fieldset');const h=c&&c.querySelector('[role=heading],legend');return h?h.textContent.trim():''})"
 
     static var pid: pid_t {
         NSWorkspace.shared.runningApplications.first { $0.bundleIdentifier?.hasPrefix("com.google.Chrome") == true }?.processIdentifier ?? 0
     }
 
-    /// Runs JS in the tab whose URL or title contains `tab` (empty = the active tab). The tab need not be in front.
     static func eval(_ js: String, tab: String = "") async throws -> String {
         guard let data = try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:9222/json")!).0 else {
             return try await withTimeout(15, "Chrome page script") { try viaAppleScript(js, tab) }
@@ -35,7 +28,6 @@ enum Chrome {
         let task = URLSession.shared.webSocketTask(with: ws)
         task.resume()
         defer { task.cancel(with: .goingAway, reason: nil) }
-        // a hung page or a dialog blocking the renderer must not stall the agent forever
         return try await withTimeout(15, "Chrome page script") { try await roundTrip(task, js) }
     }
 
@@ -71,10 +63,8 @@ enum Chrome {
         }
     }
 
-    /// JS: title, URL and visible text of the page.
     static let page = "JSON.stringify({title:document.title,url:location.href,text:(document.body.innerText||'').slice(0,6000)})"
 
-    /// Open tabs as "title | url" (DevTools, else AppleScript).
     static func tabs() async throws -> String {
         if let data = try? await URLSession.shared.data(from: URL(string: "http://127.0.0.1:9222/json")!).0,
            let all = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {

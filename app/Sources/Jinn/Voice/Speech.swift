@@ -2,7 +2,6 @@ import AVFoundation
 
 final class Speech: NSObject, AVSpeechSynthesizerDelegate {
     private let s = AVSpeechSynthesizer()
-    /// Called on the main queue when speaking starts (true) or ends/cancels (false).
     var onChange: (Bool) -> Void = { _ in }
 
     override init() { super.init(); s.delegate = self }

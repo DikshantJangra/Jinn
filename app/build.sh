@@ -1,6 +1,4 @@
 #!/bin/bash
-# Builds build/Jinn.app (ad-hoc signed). Ad-hoc signing changes the code hash each build,
-# so a plain ad-hoc signature makes macOS re-ask for permissions after every rebuild. The designated requirement below is pinned to the bundle id instead, so grants should survive.
 set -e
 cd "$(dirname "$0")"
 swift build -c release

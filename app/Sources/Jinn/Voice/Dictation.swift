@@ -1,7 +1,6 @@
 import AVFoundation
 import Speech
 
-/// On-device speech-to-text via Apple's Speech framework (no extra dependency, no network when the model supports it).
 final class Dictation {
     private let engine = AVAudioEngine()
     private let rec = SFSpeechRecognizer(locale: Locale(identifier: "en-US"))
@@ -11,11 +10,9 @@ final class Dictation {
     private let lock = NSLock()
     private var latest: String { get { lock.withLock { _latest } } set { lock.withLock { _latest = newValue } } }
 
-    /// nil = listening; else why not (shown to the user). Permissions are never re-requested here, only explained.
     func start() -> String? {
         if let problem = Permissions.voiceProblem() { return problem }
         latest = ""
-        // no input device gives a 0 Hz format, and installTap then raises an uncatchable ObjC exception
         let fmt = engine.inputNode.outputFormat(forBus: 0)
         guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return "No microphone found." }
         let r = SFSpeechAudioBufferRecognitionRequest()
@@ -41,7 +38,7 @@ final class Dictation {
     func stop() async -> String {
         engine.stop(); engine.inputNode.removeTap(onBus: 0)
         req?.endAudio()
-        try? await Task.sleep(nanoseconds: 800_000_000) // ponytail: fixed wait for the last partial; await isFinal if tails get clipped
+        try? await Task.sleep(nanoseconds: 800_000_000)
         task?.cancel(); req = nil; task = nil
         return latest
     }

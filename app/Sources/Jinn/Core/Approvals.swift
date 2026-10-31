@@ -1,10 +1,8 @@
 import Foundation
 
-/// once = this call only; session = until Jinn quits; always = persisted (offered for apps only).
 enum Decision { case deny, once, session, always }
 struct ConfirmRequest { let tool: String; let summary: String; let scope: String; let persist: Bool; let session: Bool }
 
-/// Grants keyed by scope: an app's bundle id, or "tool:<name>" for tools that are not tied to an app.
 final class Approvals {
     static let shared = Approvals(file: ContextStore.dir.appendingPathComponent("approvals.json"))
     private let file: URL?

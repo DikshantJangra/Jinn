@@ -13,7 +13,6 @@ func expand(_ p: String) -> String { (p as NSString).expandingTildeInPath }
 private let allowedRoots = ["Downloads", "Documents", "Desktop"].map {
     FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent($0).resolvingSymlinksInPath().path.lowercased()
 }
-/// Allowlist (case-insensitive: the default macOS volume is) so prompt-injected text can't reach credentials or browser profiles.
 func safePath(_ p: String) throws -> String {
     let r = URL(fileURLWithPath: expand(p)).resolvingSymlinksInPath().standardized.path
     let l = r.lowercased()
@@ -21,7 +20,6 @@ func safePath(_ p: String) throws -> String {
     return r
 }
 
-/// Moves files into category subfolders. Skips unknown types and name collisions. Returns count moved.
 func organize(_ dir: URL) throws -> Int {
     let fm = FileManager.default
     var moved = 0
@@ -46,11 +44,9 @@ let fileTools: [Tool] = [
         try FileManager.default.contentsOfDirectory(atPath: try safePath(a.str("path"))).sorted().prefix(200).joined(separator: "\n")
     },
     Tool(name: "read_file", description: "Read a text file (first 8000 characters)", params: ["path": "File path, ~ allowed"]) { a in
-        // read at most 64KB: a stray multi-GB file must not be loaded into memory
         let h = try FileHandle(forReadingFrom: URL(fileURLWithPath: try safePath(a.str("path"))))
         defer { try? h.close() }
         let data = try h.read(upToCount: 65536) ?? Data()
-        // a cut can land mid-character: retry without the last few bytes
         guard let s = (0...3).lazy.compactMap({ String(data: data.dropLast($0), encoding: .utf8) }).first else { throw JinnError("not a UTF-8 text file") }
         return String(s.prefix(8000))
     },

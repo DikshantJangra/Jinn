@@ -1,6 +1,5 @@
 import Foundation
 
-/// Append-only JSONL log of every tool call: ~/Library/Logs/Jinn/trace.jsonl. Debug what the model decided.
 enum Trace {
     static let file = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Logs/Jinn/trace.jsonl")
     private static let lock = NSLock()

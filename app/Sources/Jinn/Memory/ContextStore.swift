@@ -19,7 +19,6 @@ func cosine(_ a: [Float], _ b: [Float]) -> Float {
     return x == 0 || y == 0 ? 0 : d / (x.squareRoot() * y.squareRoot())
 }
 
-/// Paragraph-packed chunks of roughly `size` characters.
 func chunk(_ text: String, size: Int = 1500) -> [String] {
     var out: [String] = [], cur = ""
     for p in text.components(separatedBy: "\n\n") {
@@ -30,7 +29,6 @@ func chunk(_ text: String, size: Int = 1500) -> [String] {
     return out
 }
 
-/// me.md is always in the prompt; notes/*.md are retrieved by embedding similarity (Ollama nomic-embed-text, all local).
 actor ContextStore {
     static let shared = ContextStore()
     static let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Jinn")
@@ -42,7 +40,6 @@ actor ContextStore {
         return u
     }
 
-    // ponytail: in-memory index rebuilt when note mtimes change; persist to disk if notes get large
     private var index: [(text: String, vec: [Float])] = []
     private var signature = ""
 
@@ -63,7 +60,7 @@ actor ContextStore {
             index = []
             for f in files {
                 for c in chunk((try? String(contentsOf: f, encoding: .utf8)) ?? "") {
-                    guard let v = try? await client.embed(c) else { return [] } // embed model missing: skip retrieval silently
+                    guard let v = try? await client.embed(c) else { return [] }
                     index.append((c, v))
                 }
             }
@@ -77,7 +74,7 @@ actor ContextStore {
 let rememberTool = Tool(name: "remember", description: "Save a durable fact about the user (preference, detail, decision) to local notes for future turns",
                         params: ["fact": "The fact, one sentence"]) { a in
     let f = ContextStore.notes.appendingPathComponent("facts.md")
-    _ = ContextStore.meURL // ensures dirs exist
+    _ = ContextStore.meURL
     let line = "\n\n" + (try a.str("fact"))
     if let h = try? FileHandle(forWritingTo: f) { h.seekToEndOfFile(); h.write(Data(line.utf8)); try? h.close() }
     else { try line.trimmingCharacters(in: .whitespacesAndNewlines).write(to: f, atomically: true, encoding: .utf8) }
