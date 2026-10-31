@@ -1,0 +1,10 @@
+{
+  "task": "Perform zero-egress security and structure audit of local Python project",
+  "target_directory": "./src",
+  "local_model": "gemma2:2b",
+  "execution_constraints": {
+    "offline_only": true,
+    "max_steps": 5,
+    "privacy_enforced": true
+  }
+}

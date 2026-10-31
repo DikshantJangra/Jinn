@@ -1,0 +1,18 @@
+{
+  "status": "success",
+  "telemetry": {
+    "os": "Darwin / Linux / Windows",
+    "machine": "arm64 / x86_64",
+    "privacy_mode": "100% Offline / Local Execution"
+  },
+  "workspace": {
+    "files_count": 12,
+    "directories_count": 4,
+    "verified_offline": true
+  },
+  "agent_plan": {
+    "task": "Audit and analyze repository at .",
+    "steps_count": 3,
+    "status": "completed"
+  }
+}

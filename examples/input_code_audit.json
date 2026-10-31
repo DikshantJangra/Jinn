@@ -1,0 +1,8 @@
+{
+  "command": "audit",
+  "parameters": {
+    "target_dir": ".",
+    "verify_offline_telemetry": true,
+    "analyze_structure": true
+  }
+}

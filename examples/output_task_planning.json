@@ -1,0 +1,35 @@
+{
+  "task": "Perform zero-egress security and structure audit of local Python project",
+  "engine_mode": "local_hardware_gemma",
+  "model": "gemma2:2b",
+  "plan": {
+    "task": "Perform zero-egress security and structure audit of local Python project",
+    "steps": [
+      {
+        "step_number": 1,
+        "description": "Scan and inspect local workspace hierarchy without network access",
+        "tool_required": "file_inspector",
+        "expected_outcome": "Local directory tree and file size map"
+      },
+      {
+        "step_number": 2,
+        "description": "Analyze Python AST, function signatures, class boundaries, and imported packages",
+        "tool_required": "code_analyzer",
+        "expected_outcome": "List of internal functions, exposed classes, and external dependencies"
+      },
+      {
+        "step_number": 3,
+        "description": "Inspect environment variables and verify zero external network requests are made",
+        "tool_required": "telemetry_guard",
+        "expected_outcome": "Verification of 100% offline local privacy compliance"
+      },
+      {
+        "step_number": 4,
+        "description": "Synthesize security and structure audit report into local Markdown file",
+        "tool_required": "local_summarizer",
+        "expected_outcome": "Generated AUDIT_REPORT.md stored locally"
+      }
+    ],
+    "local_execution_safe": true
+  }
+}
