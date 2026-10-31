@@ -17,6 +17,23 @@ enum Apps {
         return a
     }
 
+    /// The named app, or the one the user is looking at when no name is given (Jinn's own HUD never takes focus).
+    static func target(_ name: String) throws -> NSRunningApplication {
+        if !name.isEmpty { return try resolve(name) }
+        guard let a = NSWorkspace.shared.frontmostApplication, a.bundleIdentifier != Bundle.main.bundleIdentifier else { throw JinnError("no app in front; name one") }
+        try Safety.checkApp(a.bundleIdentifier)
+        return a
+    }
+
+    /// Launches an installed app by name. Names only: no paths, no option-like values, and the same blocked-app list as everywhere else.
+    static func launch(_ name: String, background: Bool = false) throws {
+        let n = name.trimmingCharacters(in: .whitespaces)
+        guard n.count >= 2, !n.contains("/"), !n.hasPrefix("-"), !n.lowercased().hasSuffix(".app") else { throw JinnError("give the app's name, like WhatsApp") }
+        guard let path = NSWorkspace.shared.fullPath(forApplication: n) else { throw JinnError("no installed app named \(n)") }
+        try Safety.checkApp(Bundle(path: path)?.bundleIdentifier)
+        _ = try Shell.run("/usr/bin/open", (background ? ["-g"] : []) + [path])
+    }
+
     static func list() -> String {
         let front = NSWorkspace.shared.frontmostApplication?.processIdentifier
         return running().compactMap { a in

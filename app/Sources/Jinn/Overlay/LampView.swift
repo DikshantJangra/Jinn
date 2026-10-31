@@ -14,11 +14,12 @@ enum LampState: String { case idle, listening, thinking, speaking }
 /// Drag to rotate; a tap is reported through `onTap`.
 struct LampView: NSViewRepresentable {
     let state: LampState
+    let build: Int // bump to replay the block-by-block build-up
     let onTap: () -> Void
 
     final class Coordinator: NSObject, WKScriptMessageHandler {
         var onTap: () -> Void = {}
-        var ready = false, pending = LampState.idle
+        var ready = false, pending = LampState.idle, lastBuild = 0
         weak var web: WKWebView?
         func userContentController(_ c: WKUserContentController, didReceive m: WKScriptMessage) { DispatchQueue.main.async { self.onTap() } }
         func push(_ s: LampState) { pending = s; if ready { web?.evaluateJavaScript("window.jinn&&jinn.setState('\(s.rawValue)')") } }
@@ -40,6 +41,10 @@ struct LampView: NSViewRepresentable {
     func updateNSView(_ w: WKWebView, context: Context) {
         context.coordinator.onTap = onTap
         context.coordinator.push(state)
+        if build != context.coordinator.lastBuild {
+            context.coordinator.lastBuild = build
+            if context.coordinator.ready { w.evaluateJavaScript("window.jinn&&jinn.build()") } // before ready the page builds on load
+        }
     }
 }
 

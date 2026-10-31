@@ -13,9 +13,12 @@ enum Entry {
 struct JinnApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
+    @AppStorage("permMode") private var modeRaw = "ask"
+
     var body: some Scene {
         MenuBarExtra("Jinn", systemImage: "wand.and.stars") {
             Button("Show Jinn  (Option+Space)") { HUDController.shared.show() }
+            Toggle("Auto mode (still asks for shell and messages)", isOn: Binding(get: { modeRaw == "auto" }, set: { modeRaw = $0 ? "auto" : "ask" }))
             Button("Edit me.md") { NSWorkspace.shared.open(ContextStore.meURL) }
             Divider()
             Button("Quit") { NSApplication.shared.terminate(nil) }
@@ -23,7 +26,7 @@ struct JinnApp: App {
     }
 }
 
-/// Global Option+Space via Carbon (no dependency). Tap toggles the HUD; hold to talk, release to run.
+/// Global Option+Space via Carbon (no dependency). Tap: open and listen, tap again to send. Hold: talk, release to send. Escape closes.
 final class Hotkey {
     var onPress: () -> Void = {}
     var onRelease: () -> Void = {}
@@ -47,7 +50,8 @@ final class Hotkey {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let hotkey = Hotkey()
     var pressedAt = Date()
-    var wasVisible = false
+    var down = false     // key is physically held (filters auto-repeat)
+    var swallow = false  // this press already sent; ignore its release
 
     func applicationDidFinishLaunching(_ n: Notification) {
         AX.configure()
@@ -64,9 +68,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             Task {
                 let agent = Agent()
                 agent.confirm = { req in
-                    print("Allow \(req.summary)? [y/N/a=always] ", terminator: "")
+                    print("Allow \(req.summary)? [y=once/s=session/a=always/N] ", terminator: "")
                     let r = readLine()?.lowercased() ?? ""
-                    return r.hasPrefix("a") ? .always : r.hasPrefix("y") ? .once : .deny
+                    return r.hasPrefix("a") && req.persist ? .always : r.hasPrefix("a") || r.hasPrefix("s") ? .session : r.hasPrefix("y") ? .once : .deny
                 }
                 print(await agent.run(args[i + 1]) { print($0) }); exit(0)
             }
@@ -74,24 +78,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
+        Permissions.requestVoice() // once, up front; never again on later presses
         Interrupt.start()
         Task { await (HUDController.shared.model.agent.small as? OllamaClient)?.warm() } // avoid a cold first reply
         let hud = HUDController.shared
         hotkey.onPress = { Task { @MainActor in
-            guard !hud.model.listening else { return } // key repeat while held
-            hud.model.speech.stop()
-            self.pressedAt = Date(); self.wasVisible = hud.visible
-            hud.show(); hud.model.listening = true; hud.model.dictation.start()
+            guard !self.down else { return }
+            self.down = true; self.pressedAt = Date()
+            if hud.model.listening { self.swallow = true; hud.model.finishListening(); return } // second tap sends
+            hud.show(); hud.model.startListening()
         } }
         hotkey.onRelease = { Task { @MainActor in
-            hud.model.listening = false
-            if Date().timeIntervalSince(self.pressedAt) < 0.3 { // tap: toggle, no voice
-                hud.model.dictation.cancel()
-                if self.wasVisible { hud.hide() }
-            } else {
-                let text = await hud.model.dictation.stop()
-                hud.model.submit(text)
-            }
+            self.down = false
+            if self.swallow { self.swallow = false; return }
+            // held: release sends. A quick tap leaves it listening until the next tap.
+            if Date().timeIntervalSince(self.pressedAt) >= 0.4 { hud.model.finishListening() }
         } }
         hud.show()
     }
@@ -274,6 +275,30 @@ func selfTest() {
     let pw = Snapshot(pid: 1, app: "T", bundle: "t", window: "w",
                       nodes: [n(0, 0, "AXWindow"), Node(index: 1, depth: 1, role: "AXTextField", label: "Password", value: "", frame: nil, actions: [], el: el, subrole: "AXSecureTextField")])
     precondition(pw.render().contains("[1] password field \"Password\"") && pw.nodes[1].secure)
+
+    // chat name matching: typos tolerated, different people are not
+    precondition(editDistance("somaraj", "somraj") == 1 && editDistance("", "ab") == 2)
+    precondition(nameScore("Somaraj", "Somraj Nandi Newton, hii, 10:30") >= 0.8 && nameScore("Somaraj", "Rahul Sharma") < 0.5)
+    precondition(nameScore("Somaraj", "Start video call with Somraj Nandi Newton", ordered: true) < 0.5 && nameScore("Somaraj", "\u{200E}Somraj Nandi Newton", ordered: true) >= 0.8)
+    precondition(chatTitle("\u{200E}Tanish Newton, \u{200E}2 unread messages") == "Tanish Newton")
+    precondition(nameScore("Somraj Nandi", "Somraj Nandi Newton") == 1 && chatTitle("Mom, see you, 9:00") == "Mom")
+
+    // web: public http(s) only; HTML to text; search result parsing inputs
+    precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
+    precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["chrome_click", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
+    precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")
+
+    // screen OCR helpers: Vision boxes (bottom-left) map to screen points (top-left); exact beats substring; nth is reading order
+    let region = CGRect(x: 100, y: 200, width: 400, height: 300)
+    precondition(Screen.globalRect(CGRect(x: 0, y: 0.9, width: 0.5, height: 0.1), in: region) == CGRect(x: 100, y: 200, width: 200, height: 30))
+    let seen = ["Send", "Send message to Bob", "Cancel"].enumerated().map { Seen(text: $1, rect: CGRect(x: 0, y: CGFloat($0 * 10), width: 10, height: 10)) }
+    precondition(Screen.find(seen, "send")?.hit.text == "Send" && Screen.find(seen, "bob")?.hit.text == "Send message to Bob")
+    precondition(Screen.find(seen, "send", nth: 2) == nil && Screen.find(seen, "nope") == nil && Screen.find(seen, "")?.total == nil)
+
+    // approvals: tool scopes are independent; auto mode is the only global bypass
+    precondition(PermissionMode(rawValue: "auto") == .auto && PermissionMode(rawValue: "x") == nil)
 
     print("selftest ok")
 }

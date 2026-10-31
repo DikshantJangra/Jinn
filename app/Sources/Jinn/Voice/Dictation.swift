@@ -11,16 +11,13 @@ final class Dictation {
     private let lock = NSLock()
     private var latest: String { get { lock.withLock { _latest } } set { lock.withLock { _latest = newValue } } }
 
-    func start() {
-        SFSpeechRecognizer.requestAuthorization { _ in }
+    /// nil = listening; else why not (shown to the user). Permissions are never re-requested here, only explained.
+    func start() -> String? {
+        if let problem = Permissions.voiceProblem() { return problem }
         latest = ""
-        // no mic access or no input device gives a 0 Hz format, and installTap then raises an uncatchable ObjC exception
-        guard AVCaptureDevice.authorizationStatus(for: .audio) == .authorized else {
-            AVCaptureDevice.requestAccess(for: .audio) { _ in }
-            return
-        }
+        // no input device gives a 0 Hz format, and installTap then raises an uncatchable ObjC exception
         let fmt = engine.inputNode.outputFormat(forBus: 0)
-        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return }
+        guard fmt.sampleRate > 0, fmt.channelCount > 0 else { return "No microphone found." }
         let r = SFSpeechAudioBufferRecognitionRequest()
         r.shouldReportPartialResults = true
         if rec?.supportsOnDeviceRecognition == true { r.requiresOnDeviceRecognition = true }
@@ -32,7 +29,8 @@ final class Dictation {
         input.removeTap(onBus: 0)
         input.installTap(onBus: 0, bufferSize: 1024, format: fmt) { buf, _ in r.append(buf) }
         engine.prepare()
-        try? engine.start()
+        do { try engine.start() } catch { return "Could not start the microphone: \(error.localizedDescription)" }
+        return nil
     }
 
     func cancel() {

@@ -5,7 +5,7 @@ let appTools: [Tool] = [
          params: ["name": "App name", "background": "(optional) true to launch without taking focus, when you only need to drive it"]) { a in
         // -g: launch without activating (mac-cua launches background-first so the user keeps focus)
         let name = try a.str("name")
-        _ = try Shell.run("/usr/bin/open", (a.opt("background") == "true" ? ["-g"] : []) + ["-a", name])
+        try Apps.launch(name, background: a.opt("background") == "true")
         // wait up to 5s until registered, so an immediate app_state finds it
         for _ in 0..<25 where (try? Apps.resolve(name)) == nil { try await Task.sleep(nanoseconds: 200_000_000) }
         return "Opened \(name)."
@@ -34,7 +34,7 @@ let appTools: [Tool] = [
         return "Draft opened in Mail."
     },
     Tool(name: "send_message", description: "Send an iMessage/SMS via the Messages app",
-         params: ["to": "Phone number with country code or Apple ID email", "text": "Message text"], risk: .confirm) { a in
+         params: ["to": "Phone number with country code or Apple ID email", "text": "Message text"], risk: .confirm, alwaysAsk: true) { a in
         try AppleScript.run("""
         tell application "Messages"
           set s to 1st account whose service type = iMessage

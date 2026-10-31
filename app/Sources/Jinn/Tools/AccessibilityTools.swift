@@ -54,6 +54,23 @@ private let pick: [String: String] = ["app": "Running app name",
 let axTools: [Tool] = [
     Tool(name: "list_apps", description: "List running Mac apps (name, bundle id, which is frontmost)") { _ in Apps.list() },
 
+    Tool(name: "screen_read", description: "See what is on the user's screen: the frontmost app's window as an indexed element list. For Chrome it returns the page title, URL and text instead. Use for 'what is on my screen'.",
+         params: ["app": "(optional) app name; default is the app in front"], risk: .app("app")) { a in
+        let app = try Apps.target(a.opt("app"))
+        if app.bundleIdentifier?.lowercased().hasPrefix("com.google.chrome") == true, let page = try? await Chrome.eval(Chrome.page) {
+            return "Chrome page: " + page
+        }
+        // thin or missing tree (canvas, games, some Electron apps): read the pixels instead
+        func ocr(_ why: String) async throws -> String {
+            let (_, items) = try await Screen.read(app)
+            return "\(why) Text on the window by OCR (use click_text / click_at):\n" + Screen.render(items)
+        }
+        guard let s = try? await Snapshot.take(app) else { return try await ocr("\(app.localizedName ?? "App") exposes no accessibility tree.") }
+        let out = s.render() + (appGuidance[s.bundle.lowercased()].map { "\nHint: \($0)" } ?? "")
+        if s.nodes.filter(\.interactive).count < 3, let extra = try? await ocr("Few accessible elements.") { return out + "\n" + extra }
+        return out
+    },
+
     Tool(name: "app_state", description: "Read an app's window as an indexed list of UI elements. Call this before clicking or typing in an app; indices are only valid for this reading.",
          params: ["app": "Running app name"], risk: .app("app")) { a in
         let app = try Apps.resolve(try a.str("app"))
@@ -92,6 +109,10 @@ let axTools: [Tool] = [
         if t?.node.secure == true || (t == nil && focusedIsSecure(app)) { throw JinnError.blocked("Jinn does not type into password fields; ask the user to type it") }
         let busy = try await Interrupt.waitIdle(pid: app.processIdentifier)
         if let t { AXUIElementSetAttributeValue(t.node.el, kAXFocusedAttribute as CFString, true as CFBoolean) }
+        // search boxes keep the last query; typing would append to it
+        if let t, t.node.subrole == "AXSearchField" || t.node.label.lowercased().contains("search") {
+            await Input.key(app.processIdentifier, 0, flags: .maskCommand); await Input.key(app.processIdentifier, 51)
+        }
         await Input.type(app.processIdentifier, try a.str("text"))
         return "typed" + Interrupt.note(busy) + "\n" + (await observe(app, since: t?.before ?? Snapshot.latest(app.processIdentifier)))
     },
