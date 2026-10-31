@@ -76,6 +76,17 @@ class GemmaLocalEngine:
 
         return self._fallback_generate(prompt)
 
+    def chat(self, messages: list, tools: Optional[list] = None) -> Dict[str, Any]:
+        """One tool-calling turn against local Ollama /api/chat. Returns the assistant message. Raises if the runner is down."""
+        payload: Dict[str, Any] = {"model": self.model_name, "messages": messages, "stream": False,
+                                   "options": {"temperature": 0.2, "num_ctx": 16384}}
+        if tools:
+            payload["tools"] = tools
+        req = urllib.request.Request(self.endpoint.replace("/api/generate", "/api/chat"), data=json.dumps(payload).encode("utf-8"),
+                                     headers={"Content-Type": "application/json"}, method="POST")
+        with urllib.request.urlopen(req, timeout=self.timeout) as response:
+            return json.loads(response.read().decode("utf-8")).get("message", {})
+
     def _fallback_generate(self, prompt: str) -> Dict[str, Any]:
         """Deterministic local fallback processing for offline evaluation & testing."""
         if "Break down the following complex task into ordered, executable steps:" in prompt:

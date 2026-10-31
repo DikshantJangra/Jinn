@@ -61,7 +61,9 @@ let controlTools: [Tool] = [
             app.activate(options: [.activateIgnoringOtherApps])
             for _ in 0..<15 where NSWorkspace.shared.frontmostApplication?.processIdentifier != pid { try await Task.sleep(nanoseconds: 200_000_000) }
             guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) would not come to the front; nothing was sent") }
-            func look() async throws -> Snapshot { try await Task.sleep(nanoseconds: 700_000_000); return try await Snapshot.take(app) }
+            // pid-0 input goes to whatever is focused: re-check right before every keystroke
+        func front() throws { guard NSWorkspace.shared.frontmostApplication?.processIdentifier == pid else { throw JinnError("\(shown) lost focus; stopped before typing, nothing was sent") } }
+        func look() async throws -> Snapshot { try await Task.sleep(nanoseconds: 700_000_000); return try await Snapshot.take(app) }
             func focus(_ n: Node, _ s: Snapshot) async throws {
                 if !AX.textual.contains(n.role) || AXUIElementSetAttributeValue(n.el, kAXFocusedAttribute as CFString, true as CFBoolean) != .success {
                     _ = try await Click.perform(n, in: s, appPID: pid, right: false, double: false)
@@ -74,13 +76,14 @@ let controlTools: [Tool] = [
             var found = chatMatches(contact, in: snap)
             if found.isEmpty {
                 if let f = snap.visible().first(where: isSearch) { try await focus(f, snap) }
-                else { let (c, fl) = try Keys.parse(chatSearchKey[app.bundleIdentifier?.lowercased() ?? ""] ?? "cmd+f"); await Input.key(0, c, flags: fl) }
+                else { let (c, fl) = try Keys.parse(chatSearchKey[app.bundleIdentifier?.lowercased() ?? ""] ?? "cmd+f"); try front(); await Input.key(0, c, flags: fl) }
+                // the field keeps the previous query: clear it, but only once it verifiably has focus (Delete elsewhere could act on a chat)
                 let opened = try await look()
                 if let field = opened.visible().first(where: { AX.textual.contains($0.role) && isSearch($0) }) {
                     AXUIElementSetAttributeValue(field.el, kAXFocusedAttribute as CFString, true as CFBoolean)
-                    if (AX.attr(field.el, kAXFocusedAttribute) as? Bool) == true { await Input.key(0, 0, flags: .maskCommand); await Input.key(0, 51) }
+                    if (AX.attr(field.el, kAXFocusedAttribute) as? Bool) == true { try front(); await Input.key(0, 0, flags: .maskCommand); try front(); await Input.key(0, 51) } // select all, delete
                 }
-                await Input.type(0, contact)
+                try front(); await Input.type(0, contact)
                 snap = try await look()
                 found = chatMatches(contact, in: snap)
             }
@@ -97,13 +100,13 @@ let controlTools: [Tool] = [
             else { throw JinnError("opened \(top.head) but found no message box; nothing was sent") }
             if box.secure { throw JinnError.blocked("password field") }
             try await focus(box, snap)
-            await Input.type(0, text)
+            try front(); await Input.type(0, text)
             let probe = String(text.prefix(20)).lowercased()
             snap = try await look()
             guard snap.nodes.contains(where: { AX.textual.contains($0.role) && $0.value.lowercased().contains(probe) }) else {
                 throw JinnError("typing did not reach the message box of \(top.head); nothing was sent")
             }
-            await Input.key(0, try Keys.parse("Return").code)
+            try front(); await Input.key(0, try Keys.parse("Return").code)
             snap = try await look()
             let seen = snap.nodes.contains { !AX.textual.contains($0.role) && ($0.label + $0.value).lowercased().contains(probe) }
             return seen ? "Sent to \(top.head) in \(shown)." : "Pressed Return in \(top.head)'s chat but could not see the message appear; ask the user to check \(shown)."
