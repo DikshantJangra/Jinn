@@ -63,6 +63,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             return
         }
+        if let i = args.firstIndex(of: "--recall"), i + 1 < args.count {
+            Task {
+                for h in await ContextStore.shared.retrieve(args[i + 1], k: 5) {
+                    print(String(format: "cos=%@ bm25=%.2f [%@] %@", h.cos.map { String(format: "%.3f", $0) } ?? "n/a", h.bm, h.source, String(h.text.prefix(100))))
+                }
+                exit(0)
+            }
+            return
+        }
         if let i = args.firstIndex(of: "--ask"), i + 1 < args.count {
             Task {
                 let agent = Agent()
@@ -71,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     let r = readLine()?.lowercased() ?? ""
                     return r.hasPrefix("a") && req.persist ? .always : r.hasPrefix("a") || r.hasPrefix("s") ? .session : r.hasPrefix("y") ? .once : .deny
                 }
-                print(await agent.run(args[i + 1]) { print($0) }); exit(0)
+                print(await agent.run(args[i + 1]) { print($0) }); await agent.learning?.value; exit(0)
             }
             return
         }
@@ -103,6 +112,29 @@ func selfTest() {
     precondition(AppleScript.esc("a\"b\\") == "a\\\"b\\\\")
     precondition((try? safePath("~/.SSH/id_rsa")) == nil && (try? safePath("~/downloads/x")) != nil)
     precondition(category(for: "png") == "Images" && category(for: "xyz") == nil)
+
+    // memory: profile editing, dedupe, retrieval math, safety gates
+    var me = profileSeed
+    me = settingField(in: me, key: "email", value: "r@x.com")
+    precondition(profileFields(me).first { $0.key == "Email" }?.value == "r@x.com" && !me.contains("email:"))
+    me = settingField(in: me, key: "GitHub", value: "ritx")
+    precondition(profileFields(me).contains { $0.key == "GitHub" } && me.range(of: "GitHub: ritx")!.lowerBound < me.range(of: "## Learned")!.lowerBound)
+    me = appendingLearned(to: me, fact: "Prefers window seats on flights")!
+    precondition(learnedFacts(me) == ["Prefers window seats on flights"])
+    precondition(appendingLearned(to: me, fact: "prefers window seats on flights") == nil && appendingLearned(to: me, fact: "Prefers a window seat on flights") == nil)
+    precondition(appendingLearned(to: "# Me\nName: A", fact: "Likes tea")!.hasSuffix("## Learned\n- Likes tea"))
+    precondition(renderProfile(me).contains("Not set yet: Name, Phone") && !renderProfile(me).contains("Email:\n"))
+    let hints = profileHints(questions: ["Email address", "Mobile number", "Company name", "Favourite colour"], in: settingField(in: settingField(in: me, key: "Name", value: "Ritesh"), key: "Phone", value: "123"))
+    precondition(hints.map(\.question) == ["Email address", "Mobile number"] && hints[0].answer == "r@x.com" && hints[1].answer == "123", "\(hints)")
+    precondition(profileHints(questions: ["Full name", "Company name"], in: "# Me\nName: Ritesh\nCompany: Acme").map(\.answer) == ["Ritesh", "Acme"])
+    precondition(looksSecret("my password is hunter2") && looksSecret("card 4111111111111111") && !looksSecret("I like tea"))
+    precondition(mentionsSelf("remember that my sister is Anu") && !mentionsSelf("open Safari"))
+    precondition(chunkMarkdown("# A\nx\n\n# B\ny", size: 100) == ["# A\nx", "# B\ny"])
+    let docs = ["flight window seat", "tax invoice march", "window cleaning"].map(tokens)
+    let sc = bm25(query: tokens("window seat"), docs: docs)
+    precondition(sc[0] > sc[2] && sc[2] > 0 && sc[1] == 0)
+    precondition(rrf([[1, 2], [2, 3]]).max { $0.value < $1.value }?.key == 2)
+    precondition(stableHash("abc") == stableHash("abc") && stableHash("abc") != stableHash("abd"))
 
     let tmp = FileManager.default.temporaryDirectory.appendingPathComponent("jinn-\(UUID())")
     try! FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
@@ -137,14 +169,14 @@ func selfTest() {
         h += [["role": "user", "content": "q\(i)"], ["role": "assistant", "content": "", "tool_calls": []], ["role": "tool", "content": String(repeating: "x", count: 5000)], ["role": "assistant", "content": "a\(i)"]]
     }
     let c = compact(h, task: "q9", budget: 2500, keepRecent: 4).messages
-    precondition(c[0]["role"] as? String == "system" && c.contains { ($0["content"] as? String) == "q9" } && c.last?["content"] as? String == "a9" && tokens(c) <= 2500, "compact \(tokens(c))")
+    precondition(c[0]["role"] as? String == "system" && c.contains { ($0["content"] as? String) == "q9" } && c.last?["content"] as? String == "a9" && estimateTokens(c) <= 2500, "compact \(estimateTokens(c))")
     // this run's old steps become a digest, superseded looks shrink, and the task/newest step survive
     var run: [Msg] = [["role": "system", "content": "sys"], ["role": "user", "content": "do it"]]
     for i in 0..<8 { run += [["role": "assistant", "content": "", "tool_calls": [["function": ["name": "look", "arguments": ["app": "A\(i)"]]]]], ["role": "tool", "content": String(repeating: "e", count: 900), "tool_name": "look"]] }
     run += [["role": "assistant", "content": "", "tool_calls": [["function": ["name": "act", "arguments": ["target": "#1"]]]]], ["role": "tool", "content": "clicked\nChanged:\n+ x", "tool_name": "act"]]
     let rc = compact(run, task: "do it", budget: 400, keepRecent: 4)
     precondition(rc.messages[1]["content"] as? String == "do it" && (rc.messages[2]["content"] as? String)?.hasPrefix("[Progress so far") == true && rc.messages.last?["tool_name"] as? String == "act" && rc.dropped > 0, "digest")
-    precondition(tokens("abc") == 1 && tokens([["content": "abcdef"]]) == 6)
+    precondition(estimateTokens("abc") == 1 && estimateTokens([["content": "abcdef"]]) == 6)
 
     let w = OpenAICompatClient(model: "m", base: URL(string: "http://x")!).wire([
         ["role": "assistant", "content": "", "tool_calls": [["function": ["name": "t", "arguments": ["a": "b"]]]]],
@@ -267,7 +299,7 @@ func selfTest() {
 
     precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
     precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
-    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["connect_file", "gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file", "undo"])
     precondition(Web.vet("http://[::ffff:127.0.0.1]/") != nil && Web.vet("http://[::ffff:10.1.2.3]/") != nil && Web.vet("http://[64:ff9b::7f00:1]/") != nil && Web.vet("http://[2002:7f00:1::]/") != nil)
     precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
     precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")

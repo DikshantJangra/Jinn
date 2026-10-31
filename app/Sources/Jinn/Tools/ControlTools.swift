@@ -150,8 +150,10 @@ func sidebarEdge(_ snap: Snapshot) -> CGFloat {
 /// Title of the chat that is already open in the right-hand pane (its header button) when it matches the query.
 func openChatTitle(_ query: String, in snap: Snapshot) -> String? {
     let edge = sidebarEdge(snap)
-    return snap.visible().first { $0.interactive && ($0.frame?.minX ?? 0) > edge && !chatTitle($0.label).hasPrefix("Start ")
-        && nameScore(query, $0.label, ordered: true) >= 0.8 }.map { chatTitle($0.label) }
+    // only the conversation header band counts (a message bubble or link that merely contains the name must not), and near-exact
+    let top = (snap.nodes.first?.frame?.minY ?? 0) + 110
+    return snap.visible().first { $0.interactive && ($0.frame.map { $0.minX > edge && $0.minY < top } ?? false) && !chatTitle($0.label).hasPrefix("Start ")
+        && nameScore(query, $0.label, ordered: true) >= 0.95 }.map { chatTitle($0.label) }
 }
 
 func chatMatches(_ query: String, in snap: Snapshot) -> [(head: String, node: Node, score: Double)] {

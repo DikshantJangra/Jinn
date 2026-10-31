@@ -50,24 +50,26 @@ let systemTools: [Tool] = [
     Tool(name: "write_file", description: "Create a text file, or append to one. Will not overwrite an existing file unless overwrite is true.",
          params: ["path": "File path, ~ allowed", "text": "Content", "mode": "(optional) create (default), append or overwrite"], risk: .confirm) { a in
         let path = try safePath(a.str("path")), text = try a.str("text"), mode = a.opt("mode")
-        let url = URL(fileURLWithPath: path), fm = FileManager.default
+        let url = URL(fileURLWithPath: path), fm = FileManager.default, st = Stamp()
         try vetWrite(path)
         try fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         if fm.fileExists(atPath: path) {
             if mode == "append" {
                 let h = try FileHandle(forWritingTo: url); defer { try? h.close() }
-                let was = try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8))
-                Undo.shared.record("appended to \(url.lastPathComponent)") { let w = try FileHandle(forWritingTo: url); defer { try? w.close() }; try w.truncate(atOffset: was); return "removed the appended text" }
+                let was = try h.seekToEnd(); try h.write(contentsOf: Data(text.utf8)); try h.synchronize()
+                st.v = stamp(path)
+                Undo.shared.record("appended to \(url.lastPathComponent)") { try requireUnchanged(path, st); let w = try FileHandle(forWritingTo: url); defer { try? w.close() }; try w.truncate(atOffset: was); return "removed the appended text" }
                 return "Appended to \(url.lastPathComponent)."
             }
             guard mode == "overwrite" else { throw JinnError("\(url.lastPathComponent) exists; use mode append or overwrite") }
             let backup = undoDir.appendingPathComponent(UUID().uuidString)
             try fm.copyItem(at: url, to: backup)
-            Undo.shared.record("overwrote \(url.lastPathComponent)") { try Data(contentsOf: backup).write(to: url); return "restored the previous content" }
+            Undo.shared.record("overwrote \(url.lastPathComponent)") { try requireUnchanged(path, st); try Data(contentsOf: backup).write(to: url); return "restored the previous content" }
         } else {
-            Undo.shared.record("created \(url.lastPathComponent)") { try trash(path); return "moved it to the Trash" }
+            Undo.shared.record("created \(url.lastPathComponent)") { try requireUnchanged(path, st); try trash(path); return "moved it to the Trash" }
         }
         try text.write(to: url, atomically: true, encoding: .utf8)
+        st.v = stamp(path)
         return "Wrote \(url.lastPathComponent) (\(text.count) characters)."
     },
 
@@ -75,7 +77,12 @@ let systemTools: [Tool] = [
         let p = try safePath(a.str("path"))
         let existed = FileManager.default.fileExists(atPath: p)
         try FileManager.default.createDirectory(atPath: p, withIntermediateDirectories: true)
-        if !existed { Undo.shared.record("created folder \((p as NSString).lastPathComponent)") { try trash(p); return "moved it to the Trash" } }
+        if !existed {
+            Undo.shared.record("created folder \((p as NSString).lastPathComponent)") {
+                guard (try FileManager.default.contentsOfDirectory(atPath: p).filter { $0 != ".DS_Store" }).isEmpty else { throw JinnError("the folder has files in it now, so undo would remove them from view") }
+                try trash(p); return "moved it to the Trash"
+            }
+        }
         return "Created."
     },
 
@@ -84,7 +91,8 @@ let systemTools: [Tool] = [
         try vetWrite(to.path)
         try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.copyItem(atPath: try safePath(a.str("from")), toPath: to.path)
-        Undo.shared.record("copied to \(to.lastPathComponent)") { try trash(to.path); return "moved the copy to the Trash" }
+        let st = Stamp(); st.v = stamp(to.path)
+        Undo.shared.record("copied to \(to.lastPathComponent)") { try requireUnchanged(to.path, st); try trash(to.path); return "moved the copy to the Trash" }
         return "Copied."
     },
 

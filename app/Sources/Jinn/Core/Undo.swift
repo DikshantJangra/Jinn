@@ -31,6 +31,16 @@ final class Undo: @unchecked Sendable {
     }
 }
 
+/// Fingerprint of a file or folder as Jinn left it; undo refuses to touch something that changed since.
+final class Stamp: @unchecked Sendable { var v = "" }
+func stamp(_ path: String) -> String {
+    let a = try? FileManager.default.attributesOfItem(atPath: path)
+    return "\(a?[.size] ?? 0):\((a?[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0)"
+}
+func requireUnchanged(_ path: String, _ s: Stamp) throws {
+    guard stamp(path) == s.v else { throw JinnError("\((path as NSString).lastPathComponent) was changed after Jinn touched it, so undo would lose those changes") }
+}
+
 /// Where undo backups of overwritten files live.
 let undoDir: URL = {
     let u = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Jinn/undo")
@@ -68,9 +78,12 @@ func irreversibleLabel(tool: String, args: [String: Any]) -> String? {
 }
 
 let undoTools: [Tool] = [
-    Tool(name: "undo", description: "Take back what Jinn just did: move files back, restore overwritten files, put things back from the Trash, restore the clipboard or an edited field, reopen a quit app, undo typing, undo a Gmail send within seconds. Use when the user says undo, revert, take that back, or go back. Says clearly when something cannot be undone (sent messages, shell commands).",
-         params: ["steps": "(optional) how many actions to undo, default 1", "list": "(optional) true to only list what can be undone"]) { a in
-        if a.opt("list") == "true" { let l = Undo.shared.labels(); return l.isEmpty ? "Nothing to undo." : l.prefix(10).enumerated().map { "\($0 + 1). \($1)" }.joined(separator: "\n") }
-        return await Undo.shared.undo(steps: Int(a.opt("steps")) ?? 1)
+    Tool(name: "undo_list", description: "List what Jinn did recently that can be undone, newest first.") { _ in
+        let l = Undo.shared.labels()
+        return l.isEmpty ? "Nothing to undo." : l.prefix(10).enumerated().map { "\($0 + 1). \($1)" }.joined(separator: "\n")
+    },
+    Tool(name: "undo", description: "Take back what Jinn just did: move files back, restore overwritten files, put things back from the Trash, restore the clipboard or an edited field, reopen a quit app, undo typing, undo a Gmail send within seconds. Use when the user says undo, revert, take that back, or go back. Says clearly when something cannot be undone (sent messages, shell commands). The user is asked first.",
+         params: ["steps": "(optional) how many actions to undo, default 1"], risk: .confirm, alwaysAsk: true) { a in
+        await Undo.shared.undo(steps: Int(a.opt("steps")) ?? 1)
     },
 ]

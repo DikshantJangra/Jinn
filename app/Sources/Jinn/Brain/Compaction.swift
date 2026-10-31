@@ -2,10 +2,10 @@ import Foundation
 
 /// Rough token count. ponytail: 3 bytes/token is conservative for English + JSON; the agent loop calibrates it
 /// against the model's own prompt_eval_count so drift corrects itself.
-func tokens(_ s: String) -> Int { (s.utf8.count + 2) / 3 }
-func tokens(_ m: [Msg]) -> Int {
+func estimateTokens(_ s: String) -> Int { (s.utf8.count + 2) / 3 }
+func estimateTokens(_ m: [Msg]) -> Int {
     m.reduce(0) { n, x in
-        var t = tokens(x["content"] as? String ?? "") + 4
+        var t = estimateTokens(x["content"] as? String ?? "") + 4
         if let c = x["tool_calls"], let d = try? JSONSerialization.data(withJSONObject: c) { t += (d.count + 2) / 3 }
         return n + t
     }
@@ -50,7 +50,7 @@ func compact(_ messages: [Msg], task: String, budget: Int, keepRecent: Int = 8) 
     func taskIndex() -> Int { m.lastIndex { role($0) == "user" && text($0) == task } ?? 1 }
 
     // 3. earlier turns: from index 1 up to the next user message, never past the task
-    while tokens(m) > budget, taskIndex() > 1 {
+    while estimateTokens(m) > budget, taskIndex() > 1 {
         let ti = taskIndex()
         let end = m.indices.dropFirst(2).first { $0 <= ti && role(m[$0]) == "user" } ?? ti
         guard end > 1 else { break }
@@ -60,7 +60,7 @@ func compact(_ messages: [Msg], task: String, budget: Int, keepRecent: Int = 8) 
     // 4. steps of this run: oldest assistant+tool group -> digest
     var lines: [String] = []
     if let d = m.firstIndex(where: { text($0).hasPrefix(digestTag) }) { lines = [String(text(m[d]).dropFirst(digestTag.count).dropLast())]; m.remove(at: d) }
-    while tokens(m) + (lines.isEmpty ? 0 : 200) > budget {
+    while estimateTokens(m) + (lines.isEmpty ? 0 : 200) > budget {
         let ti = taskIndex()
         guard let a = m.indices.first(where: { $0 > ti && role(m[$0]) == "assistant" }) else { break }
         let end = m.indices.first { $0 > a && role(m[$0]) == "assistant" } ?? m.count
