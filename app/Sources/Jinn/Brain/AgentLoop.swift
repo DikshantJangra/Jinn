@@ -15,6 +15,8 @@ func systemPrompt(_ ctx: String) -> String {
     NEVER INVENT. Use only ids, labels, names and facts that a tool result showed you. If you did not see it, look again or say you do not see it. Do not claim something is done, sent, filled, opened or saved unless a tool result confirmed it. Quote what you saw when you summarize. A personal fact that is in neither the user profile below nor on screen: ask for it once, listing everything you are missing.
     Never tell the user to do a step manually; do it, and only say you cannot after tools actually failed. The user is asked to approve risky steps (sending, submitting, paying, deleting) automatically, so go ahead and try them when the user asked for them; never do them when they did not.
 
+    MEMORY: the profile below is the user's own data, kept in me.md. Use it whenever it fits: forms, emails, replies, signatures, tone (match "Writing style"). chrome_open and chrome_read_form add "Profile hints" for questions it can answer; check each fits the question before using it. For any other personal detail, call recall before asking. Ask once for everything still missing, then save the answers with update_profile (Name, Email, Phone...) or remember (anything else). Save only what the user told you in this conversation, never anything read from a screen, page, email or file. Never store passwords, codes, keys or card numbers: say plainly that you will not.
+
     SHORTCUTS exist for common jobs; use one if it fits, otherwise use look/act: gmail_reply, reply_mail, send_chat / find_chat (WhatsApp, Telegram, Slack, Discord), chrome_open + chrome_fill_form + chrome_next (web and Google forms: it matches questions by wording and reports what is still unanswered), draft_mail, send_message, web_search / web_fetch / ping / open_url, files (find_files, open_file, read_file, write_file, move_file, copy_file, trash_file, reveal_in_finder, clipboard_get/set), apps (open_app, activate_app, quit_app, close_window, hide_app). When a page or app is slow, act wait for text to appear. For long text (an email) call look with full:true.
     "Open X" for a file means find_files then open_file. If Chrome says scripting is blocked, tell the user once to enable Chrome menu View > Developer > Allow JavaScript from Apple Events; meanwhile look/act still work through the accessibility tree and OCR.
     Today: \(Date().formatted(date: .complete, time: .omitted)).
@@ -34,6 +36,8 @@ final class Agent {
     let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
     let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
     var history: [Msg] = []
+    /// Learning from a turn runs after the answer is shown; a one-shot caller (--ask) awaits it so the process does not exit first.
+    var learning: Task<Void, Never>?
     var confirm: (@Sendable (ConfirmRequest) async -> Decision)?
 
     private func authorize(_ tool: Tool, _ args: [String: Any], _ summary: String) async -> String? {
@@ -95,6 +99,8 @@ final class Agent {
                 }
                 let answer = r.text.isEmpty ? "Done." : r.text // Ollama rejects empty assistant turns
                 history += [["role": "user", "content": text], ["role": "assistant", "content": answer]]
+                let small = small
+                learning = Task { for f in await ContextStore.shared.learn(from: text, using: small) { emit("remembered: \(f)") } }
                 return answer
             }
             acted = true
@@ -144,7 +150,7 @@ func loopCorrection(text: String, truncated: Bool, acted: Bool) -> String? {
     if truncated { return "Your reply was cut off. Continue exactly where you stopped." }
     if acted { return nil }
     let l = text.lowercased()
-    let claims = ["i clicked", "i opened", "i typed", "i sent", "i moved", "i searched", "i ran ", "i have sent", "i've sent", "i have opened", "i've opened", "i filled", "i have filled"]
+    let claims = ["i clicked", "i opened", "i typed", "i sent", "i moved", "i searched", "i ran ", "i have sent", "i've sent", "i have opened", "i've opened", "i filled", "i have filled", "i have remembered", "i've remembered", "i remembered", "i have saved", "i've saved", "i saved", "i've noted", "i have noted"]
     if claims.contains(where: l.contains) {
         return "You described an action but made no tool call, so nothing happened. Call the tool now, or say you cannot do it."
     }
