@@ -23,4 +23,4 @@ Respond strictly with valid JSON with the following structure:
   ],
   "local_execution_safe": true
 }}"""
-    return format_gemma_turn(prompt)
+    return prompt  # Ollama applies the model chat template itself; raw turn markers would be doubled

@@ -51,3 +51,8 @@ cover/
 
 # macOS
 .DS_Store
+
+# Swift app
+references/
+app/.build/
+app/build/
