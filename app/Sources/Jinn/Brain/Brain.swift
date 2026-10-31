@@ -18,5 +18,5 @@ protocol Brain {
 }
 
 func makeBrain(_ model: String) -> Brain {
-    env("JINN_BACKEND") == "openai" ? OpenAICompatClient(model: model, base: URL(string: env("JINN_BASE_URL") ?? "http://localhost:1234")!) : OllamaClient(model: model)
+    OllamaClient(model: model)
 }

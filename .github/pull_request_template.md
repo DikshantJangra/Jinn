@@ -16,7 +16,7 @@ Provide a brief summary of the changes introduced in this PR.
 
 ### Local Testing & Verification
 - [ ] Ran automated tests (`pytest`)
-- [ ] Verified local inference with Gemma (via Ollama / llama.cpp / local engine)
+- [ ] Verified local inference with Gemma (via Ollama)
 - [ ] Generated or updated examples in `examples/`
 
 ### Checklist

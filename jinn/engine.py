@@ -1,6 +1,6 @@
 """
 Local inference engine for Google Gemma.
-Communicates with locally running instances (Ollama, llama.cpp, etc.)
+Communicates with locally running instances (Ollama)
 or operates in fallback deterministic local mode.
 Zero external library dependencies required.
 """
