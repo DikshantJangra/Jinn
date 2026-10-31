@@ -57,6 +57,7 @@ let fileTools: [Tool] = [
     Tool(name: "move_file", description: "Move or rename a file or folder. Fails if the destination exists.",
          params: ["from": "Source path", "to": "Destination path"], risk: .confirm) { a in
         let to = URL(fileURLWithPath: try safePath(a.str("to")))
+        try vetWrite(to.path)
         try FileManager.default.createDirectory(at: to.deletingLastPathComponent(), withIntermediateDirectories: true)
         try FileManager.default.moveItem(atPath: try safePath(a.str("from")), toPath: to.path)
         return "Moved."

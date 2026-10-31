@@ -12,7 +12,7 @@ enum Input {
 
     private static func post(_ e: CGEvent, _ pid: pid_t) {
         e.setIntegerValueField(.eventSourceUserData, value: marker)
-        e.postToPid(pid)
+        if pid == 0 { e.post(tap: .cghidEventTap) } else { e.postToPid(pid) } // pid 0: the focused app, for apps that ignore pid-targeted keys
     }
 
     /// Modifiers ride on the key events as flags; separate flagsChanged events posted to a pid leak into the

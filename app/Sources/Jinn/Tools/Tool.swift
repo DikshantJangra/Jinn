@@ -11,6 +11,8 @@ struct Tool {
     var risk: Risk = .safe
     /// Hard pre-check before any approval prompt: return a reason to refuse outright.
     var vet: (([String: Any]) -> String?)?
+    /// Outbound or argument-sensitive (shell, messages): asked on every call, never covered by Auto mode or a session grant.
+    var alwaysAsk = false
     let run: ([String: Any]) async throws -> String
 
     var schema: [String: Any] { [
@@ -37,4 +39,4 @@ extension Dictionary where Key == String, Value == Any {
     func opt(_ k: String) -> String { (try? str(k)) ?? "" }
 }
 
-let allTools: [Tool] = fileTools + appTools + axTools + chromeTools + shellTools + [rememberTool]
+let allTools: [Tool] = fileTools + systemTools + appTools + webTools + axTools + screenTools + controlTools + chromeTools + shellTools + [rememberTool]

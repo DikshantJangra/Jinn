@@ -8,7 +8,14 @@ func systemPrompt(_ ctx: String) -> String {
     To drive a Mac app: app_state first (it lists elements with [index]), then click / set_value / type_text / press_key using those indices.
     Indices are only valid for the latest app_state of that app; every action returns what changed, so read it before the next step.
     Prefer in this order: perform_action, set_value, click by index, press_key. Never guess an index.
-    To fill a web form in Chrome: chrome_read_form, map labels to the user profile below, then chrome_fill_form. Never submit unless asked.
+    You CAN use the internet: web_search to look things up, web_fetch to read a result page, ping to check a site is up, open_url to show a page. Never say you cannot browse; call the tool.
+    You CAN control apps: quit_app, close_window, activate_app, hide_app. To message someone in WhatsApp/Telegram/Slack/Discord call send_chat (app, contact, text); find_chat lists matching chats if the user must choose; it finds the chat, verifies it, and the user approves before it sends. Never say you cannot close apps or send chat messages; call the tool.
+    If an app shows few or no elements, or a click by index did nothing: screen_ocr reads the pixels, click_text clicks visible text, click_at clicks x,y, move_cursor hovers, wait_for_text waits for a page or dialog; add real:true to click with the visible cursor. After each step read what changed, then continue until the task is done.
+    To see what is on screen: screen_read (frontmost app; for Chrome it returns the page text). chrome_tabs lists open tabs; pass url_contains to work on a tab in the background.
+    To fill a web form in Chrome: chrome_read_form, map labels to the user profile below, then chrome_fill_form (for multiple-choice questions the key is the question and the value is the option). Never submit unless asked.
+    If a form or task needs a fact about the user that is not in their profile, ask for it in your reply and stop; never guess personal details.
+    You CAN work with files: find_files (locate by name), open_file (like double-click, optionally in a given app), reveal_in_finder, read_file, write_file, make_folder, copy_file, move_file, trash_file, clipboard_get/clipboard_set. "Open X" means find_files then open_file. NEVER tell the user to open, click, type or navigate manually; do it with tools, and only say you cannot after a tool actually failed.
+    Chain tools until the whole task is done: locate, open, read the result, act, verify. Do not stop after one step to ask permission; the approval prompts handle that.
     If a tool fails, say what failed; do not retry the same call.
     Today: \(Date().formatted(date: .complete, time: .omitted)).
 
@@ -31,19 +38,19 @@ final class Agent {
     /// nil = go ahead, else the refusal text to hand back to the model.
     private func authorize(_ tool: Tool, _ args: [String: Any], _ summary: String) async -> String? {
         if let why = tool.vet?(args) { return "error: \(JinnError.blocked(why).message)" }
-        var scope: String?
+        let scope: String, persist: Bool
         switch tool.risk {
         case .safe: return nil
-        case .confirm: break
+        case .confirm: scope = "tool:" + tool.name; persist = false
         case .app(let key): // approvals are keyed on the resolved bundle id, never on the model-typed name
-            guard let app = try? Apps.resolve(args.opt(key)), let bid = app.bundleIdentifier?.lowercased()
+            guard let app = try? Apps.target(args.opt(key)), let bid = app.bundleIdentifier?.lowercased()
             else { return "error: missing, unknown or blocked app" }
-            if Approvals.shared.allowed(bid) { return nil }
-            scope = bid
+            scope = bid; persist = true
         }
-        let d = await confirm?(ConfirmRequest(tool: tool.name, summary: summary, scope: scope)) ?? .deny
+        if !tool.alwaysAsk && (PermissionMode.current == .auto || Approvals.shared.allowed(scope)) { return nil }
+        let d = await confirm?(ConfirmRequest(tool: tool.name, summary: summary, scope: scope, persist: persist, session: !tool.alwaysAsk)) ?? .deny
         if d == .deny { return "error: \(JinnError.declined.message)" }
-        if let scope { Approvals.shared.grant(scope, always: d == .always) }
+        if d != .once && !tool.alwaysAsk { Approvals.shared.grant(scope, always: d == .always) }
         return nil
     }
 
@@ -98,7 +105,8 @@ final class Agent {
                         repeats = 0
                     } else { return "Stopped: I kept repeating \(call.name) without progress." }
                 } else if let tool = tools[call.name] {
-                    if let refusal = await authorize(tool, call.args, "\(call.name) \(argJSON)") { result = refusal }
+                    if let gap = Permissions.accessibilityGap(tool) { result = gap }
+                    else if let refusal = await authorize(tool, call.args, "\(call.name) \(argJSON)") { result = refusal }
                     else {
                         // a success may change state (open_app, then app_state again), so earlier failures may now work
                         do { result = try await tool.run(call.args); failed.removeAll() }
