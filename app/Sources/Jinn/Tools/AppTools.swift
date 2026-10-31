@@ -33,6 +33,23 @@ let appTools: [Tool] = [
         """)
         return "Draft opened in Mail."
     },
+    Tool(name: "reply_mail", description: "Reply to an email in Apple Mail (not Gmail in Chrome): finds the newest message whose sender or subject contains the text, writes the reply above the quote, and sends it if send is true. The user is asked first.",
+         params: ["find": "Sender or subject text", "text": "Reply text", "send": "(optional) true to send, otherwise leaves the reply open as a draft"], risk: .confirm, alwaysAsk: true) { a in
+        let send = a.opt("send") == "true" ? "send r" : ""
+        let out = try AppleScript.run("""
+        tell application "Mail"
+          set q to "\(AppleScript.esc(try a.str("find")))"
+          set hits to (messages of inbox whose subject contains q or sender contains q)
+          if (count of hits) is 0 then error "no message in the inbox matches " & q
+          set m to item 1 of hits
+          set r to reply m with opening window
+          set content of r to "\(AppleScript.esc(try a.str("text")))" & return & return & (content of r)
+          \(send)
+          return subject of m
+        end tell
+        """)
+        return (send.isEmpty ? "Reply to \"\(out)\" left open in Mail." : "Replied to \"\(out)\".")
+    },
     Tool(name: "send_message", description: "Send an iMessage/SMS via the Messages app",
          params: ["to": "Phone number with country code or Apple ID email", "text": "Message text"], risk: .confirm, alwaysAsk: true) { a in
         try AppleScript.run("""

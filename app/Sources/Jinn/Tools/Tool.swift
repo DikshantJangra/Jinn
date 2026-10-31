@@ -13,6 +13,8 @@ struct Tool {
     var vet: (([String: Any]) -> String?)?
     /// Outbound or argument-sensitive (shell, messages): asked on every call, never covered by Auto mode or a session grant.
     var alwaysAsk = false
+    /// Per-call version of alwaysAsk: asked every time when this returns true for the call's arguments (e.g. the target looks like Send/Delete).
+    var askIf: (([String: Any]) -> Bool)?
     let run: ([String: Any]) async throws -> String
 
     var schema: [String: Any] { [
@@ -39,4 +41,4 @@ extension Dictionary where Key == String, Value == Any {
     func opt(_ k: String) -> String { (try? str(k)) ?? "" }
 }
 
-let allTools: [Tool] = fileTools + systemTools + appTools + webTools + axTools + screenTools + controlTools + chromeTools + shellTools + [rememberTool]
+let allTools: [Tool] = fileTools + systemTools + appTools + webTools + universalTools + axTools + screenTools + controlTools + chromeTools + shellTools + [rememberTool]

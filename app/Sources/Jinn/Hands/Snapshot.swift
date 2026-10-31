@@ -29,6 +29,7 @@ final class Snapshot {
     }
 
     private static let lock = NSLock()
+    private static var woken = Set<pid_t>()
     private static var latest: [pid_t: Snapshot] = [:]
     static func latest(_ pid: pid_t) -> Snapshot? { lock.withLock { latest[pid] } }
 
@@ -36,6 +37,13 @@ final class Snapshot {
     @discardableResult
     static func take(_ app: NSRunningApplication) async throws -> Snapshot {
         guard AXIsProcessTrusted() else { throw JinnError.permission("Accessibility") }
+        // Chromium builds its web accessibility tree lazily: ask once, give it a moment, or the page looks empty
+        if Chrome.isBrowser(app), lock.withLock({ woken.insert(app.processIdentifier).inserted }) {
+            let root = AXUIElementCreateApplication(app.processIdentifier)
+            AXUIElementSetAttributeValue(root, "AXEnhancedUserInterface" as CFString, true as CFBoolean)
+            AXUIElementSetAttributeValue(root, "AXManualAccessibility" as CFString, true as CFBoolean)
+            try? await Task.sleep(nanoseconds: 800_000_000)
+        }
         let snap = try await retry(3, base: 0.3) { () -> Snapshot in
             let root = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(root, 2)

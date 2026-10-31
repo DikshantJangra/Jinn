@@ -21,21 +21,25 @@ enum Web {
         return nil
     }
 
+    private static func priv4(_ b0: UInt32, _ b1: UInt32) -> Bool {
+        b0 == 0 || b0 == 10 || b0 == 127 || (b0 == 169 && b1 == 254) || (b0 == 172 && (16...31).contains(b1))
+            || (b0 == 192 && b1 == 168) || (b0 == 100 && (64...127).contains(b1)) || b0 >= 224
+    }
+
     private static func isPrivate(_ ai: addrinfo) -> Bool {
         if ai.ai_family == AF_INET {
             let a = ai.ai_addr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { UInt32(bigEndian: $0.pointee.sin_addr.s_addr) }
-            let (b0, b1) = (a >> 24, (a >> 16) & 255)
-            return b0 == 0 || b0 == 10 || b0 == 127 || (b0 == 169 && b1 == 254) || (b0 == 172 && (16...31).contains(b1))
-                || (b0 == 192 && b1 == 168) || (b0 == 100 && (64...127).contains(b1)) || b0 >= 224
+            return priv4(a >> 24, (a >> 16) & 255)
         }
         guard ai.ai_family == AF_INET6 else { return true }
         return ai.ai_addr.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { sp -> Bool in
             let b = withUnsafeBytes(of: sp.pointee.sin6_addr) { Array($0) }
-            if b[0..<15].allSatisfy({ $0 == 0 }) && b[15] <= 1 { return true }            // :: and ::1
-            if b[0] & 0xFE == 0xFC || (b[0] == 0xFE && b[1] & 0xC0 == 0x80) { return true } // fc00::/7, fe80::/10
-            if b[0..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xFF && b[11] == 0xFF {        // ::ffff:a.b.c.d
-                return b[12] == 0 || b[12] == 10 || b[12] == 127 || (b[12] == 169 && b[13] == 254) || (b[12] == 172 && (16...31).contains(b[13])) || (b[12] == 192 && b[13] == 168)
-            }
+            let zeros = { (r: Range<Int>) in b[r].allSatisfy { $0 == 0 } }
+            if zeros(0..<15) && b[15] <= 1 { return true }                                    // :: and ::1
+            if b[0] & 0xFE == 0xFC || (b[0] == 0xFE && b[1] & 0xC0 == 0x80) { return true }   // fc00::/7, fe80::/10
+            if zeros(0..<10) && ((b[10] == 0xFF && b[11] == 0xFF) || (b[10] == 0 && b[11] == 0)) { return priv4(UInt32(b[12]), UInt32(b[13])) } // ::ffff:v4, ::v4
+            if b[0] == 0x00 && b[1] == 0x64 && b[2] == 0xFF && b[3] == 0x9B && zeros(4..<12) { return priv4(UInt32(b[12]), UInt32(b[13])) }   // 64:ff9b::/96 (NAT64)
+            if b[0] == 0x20 && b[1] == 0x02 { return priv4(UInt32(b[2]), UInt32(b[3])) }       // 2002::/16 (6to4)
             return false
         }
     }
@@ -112,14 +116,14 @@ let webTools: [Tool] = [
         try await Web.search(try a.str("query"), limit: max(1, min(10, Int(a.opt("limit")) ?? 5)))
     },
     Tool(name: "web_fetch", description: "Download a web page and return its readable text (first 6000 characters). Use after web_search to read a result.",
-         params: ["url": "Full http(s) URL"], vet: { Web.vet($0.opt("url")) }) { a in
+         params: ["url": "Full http(s) URL"], risk: .confirm, vet: { Web.vet($0.opt("url")) }) { a in
         let (d, h, _) = try await Web.request(try Web.url(a))
         guard (200..<300).contains(h.statusCode) else { throw JinnError("HTTP \(h.statusCode)") }
         let t = Web.text(String(decoding: d.prefix(1_500_000), as: UTF8.self))
         return String(t.prefix(6000))
     },
     Tool(name: "ping", description: "Check whether a website is up: returns the HTTP status and response time.",
-         params: ["url": "Site URL, e.g. https://example.com"], vet: { Web.vet($0.opt("url")) }) { a in
+         params: ["url": "Site URL, e.g. https://example.com"], risk: .confirm, vet: { Web.vet($0.opt("url")) }) { a in
         let u = try Web.url(a)
         do {
             var (_, h, ms) = try await Web.request(u, method: "HEAD")
@@ -127,7 +131,7 @@ let webTools: [Tool] = [
             return "\(u.host ?? "site") is up: HTTP \(h.statusCode) in \(ms) ms"
         } catch { return "\(u.host ?? "site") is unreachable: \(error.localizedDescription)" }
     },
-    Tool(name: "open_url", description: "Open a URL in the user's default browser.", params: ["url": "Full http(s) URL"],
+    Tool(name: "open_url", description: "Open a URL in the user's default browser.", params: ["url": "Full http(s) URL"], risk: .confirm,
          vet: { Web.vet($0.opt("url")) }) { a in
         NSWorkspace.shared.open(try Web.url(a))
         return "Opened."

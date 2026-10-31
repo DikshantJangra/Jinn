@@ -3,20 +3,20 @@ import Foundation
 func systemPrompt(_ ctx: String) -> String {
     """
     You are Jinn, a local assistant running on the user's Mac. Everything stays on this machine.
-    Act with tools instead of describing what you would do. Never invent tool results.
-    Replies are spoken aloud: keep them to one or two short sentences, no markdown.
-    To drive a Mac app: app_state first (it lists elements with [index]), then click / set_value / type_text / press_key using those indices.
-    Indices are only valid for the latest app_state of that app; every action returns what changed, so read it before the next step.
-    Prefer in this order: perform_action, set_value, click by index, press_key. Never guess an index.
-    You CAN use the internet: web_search to look things up, web_fetch to read a result page, ping to check a site is up, open_url to show a page. Never say you cannot browse; call the tool.
-    You CAN control apps: quit_app, close_window, activate_app, hide_app. To message someone in WhatsApp/Telegram/Slack/Discord call send_chat (app, contact, text); find_chat lists matching chats if the user must choose; it finds the chat, verifies it, and the user approves before it sends. Never say you cannot close apps or send chat messages; call the tool.
-    If an app shows few or no elements, or a click by index did nothing: screen_ocr reads the pixels, click_text clicks visible text, click_at clicks x,y, move_cursor hovers, wait_for_text waits for a page or dialog; add real:true to click with the visible cursor. After each step read what changed, then continue until the task is done.
-    To see what is on screen: screen_read (frontmost app; for Chrome it returns the page text). chrome_tabs lists open tabs; pass url_contains to work on a tab in the background.
-    To fill a web form in Chrome: chrome_read_form, map labels to the user profile below, then chrome_fill_form (for multiple-choice questions the key is the question and the value is the option). Never submit unless asked.
-    If a form or task needs a fact about the user that is not in their profile, ask for it in your reply and stop; never guess personal details.
-    You CAN work with files: find_files (locate by name), open_file (like double-click, optionally in a given app), reveal_in_finder, read_file, write_file, make_folder, copy_file, move_file, trash_file, clipboard_get/clipboard_set. "Open X" means find_files then open_file. NEVER tell the user to open, click, type or navigate manually; do it with tools, and only say you cannot after a tool actually failed.
-    Chain tools until the whole task is done: locate, open, read the result, act, verify. Do not stop after one step to ask permission; the approval prompts handle that.
-    If a tool fails, say what failed; do not retry the same call.
+    Replies are spoken aloud: one or two short sentences, no markdown.
+
+    HOW YOU WORK ON ANY APP OR WEBSITE (no app-specific training needed): look, then act, then check.
+    1. look: lists what is on screen as #id role "label" (works for native apps, websites, anything with text).
+    2. act (click | type | press | scroll | wait) with target = a #id from your latest look, or the visible text. It returns what changed.
+    3. Read that result. If it says No visible change or an error, look again and try a different element or route (scroll, open a menu, press a key, another way to the same goal). Keep going until the goal is truly reached.
+    Typing needs a focused text box: to reply or compose, click Reply/Compose first, look again, click the box, then type. If look shows only text, click the text you want and look again.
+    Navigate yourself: to reply to an email, open the message row, then press Reply, then type, then Send. Nobody will tell you where buttons are; look for them. If the target is not on screen, scroll, switch tabs/folders, search, or open it first.
+
+    NEVER INVENT. Use only ids, labels, names and facts that a tool result showed you. If you did not see it, look again or say you do not see it. Do not claim something is done, sent, filled, opened or saved unless a tool result confirmed it. Quote what you saw when you summarize. A personal fact that is in neither the user profile below nor on screen: ask for it once, listing everything you are missing.
+    Never tell the user to do a step manually; do it, and only say you cannot after tools actually failed. The user is asked to approve risky steps (sending, submitting, paying, deleting) automatically, so go ahead and try them when the user asked for them; never do them when they did not.
+
+    SHORTCUTS exist for common jobs; use one if it fits, otherwise use look/act: gmail_reply, reply_mail, send_chat / find_chat (WhatsApp, Telegram, Slack, Discord), chrome_open + chrome_fill_form + chrome_next (web and Google forms: it matches questions by wording and reports what is still unanswered), draft_mail, send_message, web_search / web_fetch / ping / open_url, files (find_files, open_file, read_file, write_file, move_file, copy_file, trash_file, reveal_in_finder, clipboard_get/set), apps (open_app, activate_app, quit_app, close_window, hide_app). When a page or app is slow, act wait for text to appear. For long text (an email) call look with full:true.
+    "Open X" for a file means find_files then open_file. If Chrome says scripting is blocked, tell the user once to enable Chrome menu View > Developer > Allow JavaScript from Apple Events; meanwhile look/act still work through the accessibility tree and OCR.
     Today: \(Date().formatted(date: .complete, time: .omitted)).
 
     \(ctx)
@@ -29,8 +29,11 @@ final class Agent {
     let big: Brain? = env("JINN_BIG_MODEL").map(makeBrain)
     let tools = Dictionary(uniqueKeysWithValues: allTools.map { ($0.name, $0) })
     /// Fixed order: a byte-stable prompt prefix lets Ollama reuse its KV cache across rounds.
-    let schemas = allTools.map(\.schema)
-    let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 12
+    /// The model sees few tools (a small model picks better): look/act drive the screen and dispatch to these internally.
+    static let internalTools: Set<String> = ["screen_read", "app_state", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "screen_ocr", "click_text", "click_at", "move_cursor",
+                                             "wait_for_text", "chrome_press", "chrome_type", "chrome_elements", "chrome_click", "chrome_tabs", "chrome_page", "chrome_read_form"]
+    let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
+    let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
     var history: [Msg] = []
     /// Asked before any non-.safe tool runs. nil = deny (fail closed).
     var confirm: (@Sendable (ConfirmRequest) async -> Decision)?
@@ -47,10 +50,11 @@ final class Agent {
             else { return "error: missing, unknown or blocked app" }
             scope = bid; persist = true
         }
-        if !tool.alwaysAsk && (PermissionMode.current == .auto || Approvals.shared.allowed(scope)) { return nil }
-        let d = await confirm?(ConfirmRequest(tool: tool.name, summary: summary, scope: scope, persist: persist, session: !tool.alwaysAsk)) ?? .deny
+        let always = tool.alwaysAsk || tool.askIf?(args) == true
+        if !always && (PermissionMode.current == .auto || Approvals.shared.allowed(scope)) { return nil }
+        let d = await confirm?(ConfirmRequest(tool: tool.name, summary: summary, scope: scope, persist: persist, session: !always)) ?? .deny
         if d == .deny { return "error: \(JinnError.declined.message)" }
-        if d != .once && !tool.alwaysAsk { Approvals.shared.grant(scope, always: d == .always) }
+        if d != .once && !always { Approvals.shared.grant(scope, always: d == .always) }
         return nil
     }
 
@@ -69,7 +73,8 @@ final class Agent {
         if text.lowercased().contains("think hard") { _ = escalate("you asked") }
 
         var failed = Set<String>()
-        var lastSig = "", repeats = 0, nudges = 0, acted = false
+        var lastSig = "", repeats = 0, nudges = 0, checks = 0, acted = false
+        var evidence = Evidence.none
         var limit = maxRounds, round = 0
         while round < limit {
             round += 1
@@ -82,6 +87,12 @@ final class Agent {
                 if nudges < 2, let fix = loopCorrection(text: r.text, truncated: r.truncated, acted: acted) {
                     nudges += 1
                     emit("nudge: \(fix.prefix(80))")
+                    messages.append(["role": "user", "content": fix])
+                    continue
+                }
+                if checks < 2, let fix = finalCheck(text: r.text, evidence: evidence) {
+                    checks += 1
+                    emit("check: \(fix.prefix(80))")
                     messages.append(["role": "user", "content": fix])
                     continue
                 }
@@ -105,16 +116,23 @@ final class Agent {
                         repeats = 0
                     } else { return "Stopped: I kept repeating \(call.name) without progress." }
                 } else if let tool = tools[call.name] {
+                    var args = call.args
+                    // no app named = "the one in front": pin it now so approval and action cannot differ if the user switches apps
+                    if case .app(let key) = tool.risk, args.opt(key).isEmpty, let n = try? Apps.target("").localizedName { args[key] = n }
+                    // show the user (and the trace) WHAT #id means when they are asked to approve it
+                    if call.name == "act" { let l = resolvedLabel(args); args["label"] = l.isEmpty ? nil : l } // never keep a model-written label
                     if let gap = Permissions.accessibilityGap(tool) { result = gap }
-                    else if let refusal = await authorize(tool, call.args, "\(call.name) \(argJSON)") { result = refusal }
+                    else if let refusal = await authorize(tool, args, "\(call.name) \(argJSON)") { result = refusal }
                     else {
                         // a success may change state (open_app, then app_state again), so earlier failures may now work
-                        do { result = try await tool.run(call.args); failed.removeAll() }
+                        do { result = try await tool.run(args); failed.removeAll() }
                         catch { result = "error: \(explain(error))"; failed.insert(sig) }
                     }
                 } else {
-                    result = "error: unknown tool \(call.name). Available: \(allTools.map(\.name).joined(separator: ", "))"; failed.insert(sig)
+                    result = "error: unknown tool \(call.name). Available: \(allTools.map(\.name).filter { !Agent.internalTools.contains($0) }.joined(separator: ", "))"; failed.insert(sig)
                 }
+                if result.hasPrefix("error:"), uiTools.contains(call.name) { result += "\nRecovery: call look again, then try a different element or route. Do not repeat this call and do not ask the user to do it manually." }
+                evidence = nextEvidence(tool: call.name, result: result, was: evidence)
                 result = String(result.prefix(4000))
                 Trace.log(tool: call.name, args: argJSON, result: result, ms: Int(Date().timeIntervalSince(t0) * 1000))
                 emit("<- \(result.prefix(300))")
@@ -139,4 +157,31 @@ func loopCorrection(text: String, truncated: Bool, acted: Bool) -> String? {
         return "You described an action but made no tool call, so nothing happened. Call the tool now, or say you cannot do it."
     }
     return nil
+}
+
+/// Tools that drive the screen: their success is only believable if the screen showed a change.
+let uiTools: Set<String> = ["act", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "click_text", "click_at", "chrome_press", "chrome_type", "chrome_click", "chrome_next", "chrome_fill_form"]
+/// Tools that put fresh screen state in front of the model.
+let lookTools: Set<String> = ["look", "app_state", "screen_read", "screen_ocr", "chrome_page", "chrome_read_form", "chrome_elements", "chrome_open", "wait_for_text"]
+
+/// What the model can honestly claim: nothing acted yet, last UI action confirmed on screen, it failed or changed nothing, or nobody checked.
+enum Evidence { case none, verified, failed, unverified }
+
+func nextEvidence(tool: String, result: String, was: Evidence) -> Evidence {
+    if lookTools.contains(tool) { return result.hasPrefix("error:") ? was : .verified }
+    guard uiTools.contains(tool) else { return was }
+    if result.hasPrefix("error:") || result.contains("No visible change") { return .failed }
+    return result.contains("Changed:") || tool == "chrome_fill_form" || tool == "chrome_next" ? .verified : .unverified
+}
+
+/// Stops an unfounded "done": a failed last step cannot be reported as success, and an unchecked one must be checked first.
+func finalCheck(text: String, evidence: Evidence) -> String? {
+    let l = text.lowercased()
+    switch evidence {
+    case .failed where ["sent", "replied", "done", "filled", "opened", "clicked", "submitted", "completed", "saved", "finished", "typed", "written", "ready"].contains(where: l.contains):
+        return "Your last screen action failed or changed nothing, so do not report success. Call look, then try a different way, or tell the user exactly what failed."
+    case .unverified:
+        return "You acted but never checked the result. Call look now, confirm it on screen, then report only what you actually see."
+    default: return nil
+    }
 }

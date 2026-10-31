@@ -220,7 +220,7 @@ func selfTest() {
 
     // tool schemas: stable order (prompt-cache friendly), every tool has a description
     let names1 = Agent().schemas.map { (($0["function"] as! [String: Any])["name"] as! String) }
-    precondition(names1 == allTools.map(\.name) && names1 == Agent().schemas.map { (($0["function"] as! [String: Any])["name"] as! String) })
+    precondition(names1 == allTools.map(\.name).filter { !Agent.internalTools.contains($0) } && names1.contains("look") && names1.contains("act") && !names1.contains("type_text") && names1 == Agent().schemas.map { (($0["function"] as! [String: Any])["name"] as! String) })
     precondition(Set(names1).count == names1.count && allTools.allSatisfy { !$0.description.isEmpty })
 
     // loop corrections (from Agent! LoopControl)
@@ -286,7 +286,8 @@ func selfTest() {
     // web: public http(s) only; HTML to text; search result parsing inputs
     precondition(Web.vet("https://example.com/x") == nil && Web.vet("http://localhost:11434") != nil && Web.vet("http://192.168.1.1") != nil)
     precondition(Web.vet("http://2130706433") != nil && Web.vet("http://0x7f.1") != nil && Web.vet("http://169.254.169.254") != nil && Web.vet("http://100.64.0.1") != nil)
-    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["chrome_click", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(allTools.filter(\.alwaysAsk).map(\.name).sorted() == ["chrome_click", "gmail_reply", "reply_mail", "run_shell", "send_chat", "send_message", "trash_file"])
+    precondition(Web.vet("http://[::ffff:127.0.0.1]/") != nil && Web.vet("http://[::ffff:10.1.2.3]/") != nil && Web.vet("http://[64:ff9b::7f00:1]/") != nil && Web.vet("http://[2002:7f00:1::]/") != nil)
     precondition(Web.vet("file:///etc/passwd") != nil && Web.vet("http://[::1]/") != nil && Web.vet("http://10.0.0.5") != nil)
     precondition(Web.text("<style>x{}</style><p>Hi &amp; <b>bye</b></p><script>1</script>") == "Hi & bye")
 
@@ -296,6 +297,22 @@ func selfTest() {
     let seen = ["Send", "Send message to Bob", "Cancel"].enumerated().map { Seen(text: $1, rect: CGRect(x: 0, y: CGFloat($0 * 10), width: 10, height: 10)) }
     precondition(Screen.find(seen, "send")?.hit.text == "Send" && Screen.find(seen, "bob")?.hit.text == "Send message to Bob")
     precondition(Screen.find(seen, "send", nth: 2) == nil && Screen.find(seen, "nope") == nil && Screen.find(seen, "")?.total == nil)
+
+    func tool(_ n: String) -> Tool { allTools.first { $0.name == n }! }
+    // anti-hallucination: ids must come from a look; success claims need screen evidence; risky targets always ask
+    precondition(Observed.index("#12") == 12 && Observed.index("[3]") == 3 && Observed.index("2024") == nil && Observed.index("Send") == nil)
+    precondition(looksRisky("Send") && looksRisky("Submit form") && looksRisky("Delete account") && !looksRisky("Next") && !looksRisky("Sender settings"))
+    precondition(nextEvidence(tool: "act", result: "clicked\nChanged:\n+ x", was: .none) == .verified)
+    precondition(nextEvidence(tool: "act", result: "clicked\nNo visible change", was: .verified) == .failed)
+    precondition(nextEvidence(tool: "click_text", result: "clicked", was: .none) == .unverified && nextEvidence(tool: "look", result: "ok", was: .failed) == .verified)
+    precondition(nextEvidence(tool: "read_file", result: "x", was: .failed) == .failed)
+    precondition(finalCheck(text: "Email sent.", evidence: .failed) != nil && finalCheck(text: "I could not find it.", evidence: .failed) == nil)
+    precondition(finalCheck(text: "ok", evidence: .unverified) != nil && finalCheck(text: "Email sent.", evidence: .verified) == nil)
+    Observed.set(.web, app: "T", labels: [0: "Send message", 1: "Next", 2: "Inbox"])
+    precondition(actNeedsApproval(["action": "click", "target": "#0"]) && actNeedsApproval(["action": "click", "target": "send"]), "resolved label")
+    precondition(!actNeedsApproval(["action": "click", "target": "#1", "label": "Send"]) && !actNeedsApproval(["action": "click", "target": "Inbox"]), "model label ignored")
+    precondition(actNeedsApproval(["action": "press", "text": "cmd+Return"]) && actNeedsApproval(["action": "press", "text": "Return"]) && actNeedsApproval(["action": "press", "text": "cmd+a"]) && actNeedsApproval(["action": "press", "text": "space"]) && !actNeedsApproval(["action": "press", "text": "Tab"]) && !actNeedsApproval(["action": "press", "text": "PageDown"]) && actNeedsApproval(["action": "type", "text": "a\nb"]) && !actNeedsApproval(["action": "type", "text": "hi"]) && !actNeedsApproval(["action": "scroll", "target": "Send"]))
+    Observed.set(.none, app: "", labels: [:])
 
     // approvals: tool scopes are independent; auto mode is the only global bypass
     precondition(PermissionMode(rawValue: "auto") == .auto && PermissionMode(rawValue: "x") == nil)
