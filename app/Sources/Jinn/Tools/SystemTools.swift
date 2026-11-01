@@ -121,4 +121,50 @@ let systemTools: [Tool] = [
         Permissions.openSettings(p)
         return "Opened the \(p) pane."
     },
+
+    Tool(name: "mac_control", description: "Control the Mac directly. action: play (value = song, artist or album from local music; empty resumes), pause, next, previous, volume (value = 0-100, up or down), mute, unmute, bluetooth / wifi / dark_mode (value = on, off or toggle), sleep, display_off, lock, shutdown, restart, logout.",
+         params: ["action": "One of the actions above", "value": "(optional) see action"],
+         askIf: { ["shutdown", "restart", "logout"].contains($0.opt("action").lowercased()) }) { a in
+        let v = a.opt("value")
+        switch try a.str("action").lowercased() {
+        case "play": return try await Mac.play(v)
+        case "pause": return try Mac.music("pause")
+        case "next": return try Mac.music("next track")
+        case "previous": return try Mac.music("previous track")
+        case "volume": return try Mac.volume(v.lowercased())
+        case "mute": return try Mac.mute(true)
+        case "unmute": return try Mac.mute(false)
+        case "bluetooth": return try await Mac.bluetooth(v)
+        case "wifi": return try Mac.wifi(v)
+        case "dark_mode": return try Mac.darkMode(v)
+        case "lock": return try Mac.lock()
+        case let p where ["sleep", "display_off", "shutdown", "restart", "logout"].contains(p): return try Mac.power(p)
+        case let x: throw JinnError("unknown action \(x)")
+        }
+    },
 ]
+
+/// Plain switch commands ("bluetooth off", "next song", "sleep") skip the model entirely: mac_control args, or nil to let the model handle it.
+func quickControl(_ text: String) -> [String: Any]? {
+    let t = text.lowercased().trimmingCharacters(in: .whitespacesAndNewlines.union(.punctuationCharacters))
+        .replacingOccurrences(of: #"^(hey |ok )?(jinn,? )?(please |can you |could you )?|\s+please$"#, with: "", options: .regularExpression)
+    func m(_ p: String) -> [String]? {
+        guard let r = try? NSRegularExpression(pattern: p), let h = r.firstMatch(in: t, range: NSRange(t.startIndex..., in: t)) else { return nil }
+        return (1..<h.numberOfRanges).map { h.range(at: $0).location == NSNotFound ? "" : String(t[Range(h.range(at: $0), in: t)!]) }
+    }
+    let radio = { (s: String) in s.hasPrefix("blue") ? "bluetooth" : s.hasPrefix("dark") ? "dark_mode" : "wifi" }
+    if let g = m(#"^(?:turn |switch )?(bluetooth|wi-?fi|dark mode) (on|off)$"#) { return ["action": radio(g[0]), "value": g[1]] }
+    if let g = m(#"^(?:turn |switch )(on|off) (?:the )?(bluetooth|wi-?fi|dark mode)$"#) { return ["action": radio(g[1]), "value": g[0]] }
+    if let g = m(#"^(?:set )?(?:the )?volume (?:to )?(up|down|\d{1,3})%?$"#) { return ["action": "volume", "value": g[0]] }
+    if let g = m(#"^play (?!.*\b(?:youtube|spotify|chrome|browser|video|on)\b)(.+)$"#) { return ["action": "play", "value": g[0]] }
+    let fixed: [(String, String)] = [
+        (#"^(?:pause|stop)(?: the)?(?: music| song| playback)?$"#, "pause"), (#"^(?:play|resume)(?: the)?(?: music| song)?$"#, "play"),
+        (#"^(?:next|skip)(?: the)?(?: song| track)?$"#, "next"), (#"^(?:previous|prev|last)(?: song| track)?$"#, "previous"),
+        (#"^mute$"#, "mute"), (#"^unmute$"#, "unmute"),
+        (#"^(?:go to )?sleep(?: (?:the )?(?:mac|computer))?$"#, "sleep"), (#"^(?:turn off|switch off) (?:the )?(?:display|screen)$"#, "display_off"),
+        (#"^lock(?: (?:the )?(?:mac|computer|screen))?$"#, "lock"),
+        (#"^(?:shut ?down|power off)(?: (?:the )?(?:mac|computer))?$|^turn off (?:the )?(?:mac|computer)$"#, "shutdown"),
+        (#"^(?:restart|reboot)(?: (?:the )?(?:mac|computer))?$"#, "restart"), (#"^log ?out$"#, "logout"),
+    ]
+    return fixed.first { m($0.0) != nil }.map { ["action": $0.1] }
+}

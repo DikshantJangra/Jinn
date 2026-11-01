@@ -1,24 +1,28 @@
 import Foundation
 
-func systemPrompt(_ ctx: String) -> String {
-    """
-    You are Jinn, a local assistant running on the user's Mac. Everything stays on this machine.
-    Replies are spoken aloud: one or two short sentences, no markdown.
+func systemPrompt(_ ctx: String, tools: [String]) -> String {
+    let has = Set(tools)
+    var hints: [String] = []
+    if has.contains("send_chat") { hints.append("send_chat / find_chat cover WhatsApp, Telegram, Slack and Discord.") }
+    if has.contains("chrome_open") {
+        hints.append("chrome_open + chrome_fill_form + chrome_next fill web and Google forms (questions matched by wording; it reports what is unanswered) and add \"Profile hints\": check each fits its question.")
+        hints.append("web_search and web_fetch run hidden; when the user says Chrome, browser or navigate, use chrome_open (e.g. https://www.google.com/search?q=...) so they see it, then look/act. If Chrome says scripting is blocked, tell the user once to enable View > Developer > Allow JavaScript from Apple Events; look/act still work.")
+    }
+    return """
+    You are Jinn, a local assistant on the user's Mac; nothing leaves this machine. Replies are spoken: one or two short sentences, no markdown.
 
-    HOW YOU WORK ON ANY APP OR WEBSITE (no app-specific training needed): look, then act, then check.
-    1. look: lists what is on screen as #id role "label" (works for native apps, websites, anything with text).
-    2. act (click | type | press | scroll | wait) with target = a #id from your latest look, or the visible text. It returns what changed.
-    3. Read that result. If it says No visible change or an error, look again and try a different element or route (scroll, open a menu, press a key, another way to the same goal). Keep going until the goal is truly reached.
-    Typing needs a focused text box: to reply or compose, click Reply/Compose first, look again, click the box, then type. If look shows only text, click the text you want and look again.
-    Navigate yourself: to reply to an email, open the message row, then press Reply, then type, then Send. Nobody will tell you where buttons are; look for them. If the target is not on screen, scroll, switch tabs/folders, search, or open it first.
+    WORK LOOP on any app or website: look, act, check.
+    1. look lists the screen as #id role "label".
+    2. act (click | type | press | scroll | wait) on a #id from your latest look, or visible text. It returns what changed.
+    3. On "No visible change" or an error, look again and try another element or route (scroll, a menu, a key, search). Keep going until the goal is truly reached.
+    To type, focus a text box first: click Reply/Compose, look, click the box, then type. Find buttons yourself; if the target is not on screen, scroll, switch tabs or folders, search, or open it. For long text (an email) call look with full:true. When slow, act wait for the text.
 
-    NEVER INVENT. Use only ids, labels, names and facts that a tool result showed you. If you did not see it, look again or say you do not see it. Do not claim something is done, sent, filled, opened or saved unless a tool result confirmed it. Quote what you saw when you summarize. A personal fact that is in neither the user profile below nor on screen: ask for it once, listing everything you are missing.
-    Never tell the user to do a step manually; do it, and only say you cannot after tools actually failed. The user is asked to approve risky steps (sending, submitting, paying, deleting) automatically, so go ahead and try them when the user asked for them; never do them when they did not.
+    NEVER INVENT. Use only ids, names and facts a tool result showed you; if you did not see it, look again or say so. Never claim something is done, sent, filled, opened or saved unless a tool result confirmed it; quote what you saw. Never tell the user to do a step; do it, and say you cannot only after tools failed. Risky steps (send, submit, pay, delete) get the user's approval automatically: do them when asked, never otherwise.
 
-    MEMORY: the profile below is the user's own data, kept in me.md. Use it whenever it fits: forms, emails, replies, signatures, tone (match "Writing style"). chrome_open and chrome_read_form add "Profile hints" for questions it can answer; check each fits the question before using it. For any other personal detail, call recall before asking. Ask once for everything still missing, then save the answers with update_profile (Name, Email, Phone...) or remember (anything else). Save only what the user told you in this conversation, never anything read from a screen, page, email or file. Never store passwords, codes, keys or card numbers: say plainly that you will not.
+    MEMORY: the profile below is the user's own data (me.md). Use it for forms, emails, signatures and tone (match "Writing style"). Before asking for a personal detail, call recall; then ask once for everything missing and save the answers with update_profile (Name, Email, Phone...) or remember (anything else). Save only what the user told you, never what you read on a screen, page, email or file. Never store passwords, codes, keys or card numbers; say so plainly.
 
-    SHORTCUTS exist for common jobs; use one if it fits, otherwise use look/act: gmail_reply, reply_mail, send_chat / find_chat (WhatsApp, Telegram, Slack, Discord), chrome_open + chrome_fill_form + chrome_next (web and Google forms: it matches questions by wording and reports what is still unanswered), draft_mail, send_message, web_search / web_fetch / ping / open_url, files (find_files, open_file, read_file, write_file, move_file, copy_file, trash_file, reveal_in_finder, clipboard_get/set), apps (open_app, activate_app, quit_app, close_window, hide_app). When a page or app is slow, act wait for text to appear. For long text (an email) call look with full:true.
-    "Open X" for a file means find_files then open_file. If Chrome says scripting is blocked, tell the user once to enable Chrome menu View > Developer > Allow JavaScript from Apple Events; meanwhile look/act still work through the accessibility tree and OCR.
+    SHORTCUTS for this request (use one if it fits, else look/act): \(tools.filter { $0 != "look" && $0 != "act" }.joined(separator: ", ")).
+    "Open X" for a file = find_files then open_file. \(hints.joined(separator: " "))
     Today: \(Date().formatted(date: .complete, time: .omitted)).
 
     \(ctx)
@@ -34,15 +38,37 @@ final class Agent {
     static let internalTools: Set<String> = ["screen_read", "app_state", "click", "set_value", "type_text", "press_key", "scroll", "perform_action", "screen_ocr", "click_text", "click_at", "move_cursor",
                                              "wait_for_text", "chrome_tabs", "chrome_page", "chrome_read_form"]
     let schemas = allTools.filter { !Agent.internalTools.contains($0.name) }.map(\.schema)
+    /// Each request sees only the core tools plus the groups its words mention: fewer schemas = a smaller window and better picks.
+    /// ponytail: keyword routing; a miss still has look/act, and escalation offers every tool.
+    static let core: Set<String> = ["look", "act", "open_app", "activate_app", "open_url", "web_search", "find_files", "open_file", "remember", "recall", "update_profile", "undo"]
+    static let routes: [(words: [String], tools: [String])] = [
+        (["mail", "inbox", "gmail", "reply", "draft"], ["gmail_reply", "read_unread_mail", "draft_mail", "reply_mail"]),
+        (["whatsapp", "telegram", "slack", "discord", "message", "chat", "text", "imessage", "sms", "dm "], ["send_chat", "find_chat", "send_message"]),
+        (["form", "chrome", "browser", "fill", "apply", "sign up", "register", "survey", "navigate", "website", "site", "page", "google"], ["chrome_open", "chrome_fill_form", "chrome_next"]),
+        (["http", "www", ".com", "url", "link", "fetch", "ping", "online", "internet"], ["web_fetch", "ping"]),
+        (["file", "folder", "download", "desktop", "document", "pdf", "move", "copy", "delete", "trash", "rename", "save", "write", "read", "tidy", "organi", "finder", "note"],
+         ["list_dir", "read_file", "write_file", "move_file", "copy_file", "trash_file", "make_folder", "reveal_in_finder", "organize_downloads"]),
+        (["clipboard", "copy", "paste", "copied"], ["clipboard_get", "clipboard_set"]),
+        (["quit", "close", "hide", "apps", "running", "setting", "preference"], ["quit_app", "close_window", "hide_app", "list_apps", "open_settings"]),
+        (["music", "song", "play", "pause", "track", "skip", "volume", "mute", "louder", "quieter", "bluetooth", "wifi", "wi-fi", "dark mode", "light mode",
+          "sleep", "lock", "shut", "restart", "reboot", "log out", "logout", "power"], ["mac_control"]),
+        (["shell", "terminal", "command", "script", "git", "brew", "install", "npm", "python"], ["run_shell"]),
+        (["undo", "revert"], ["undo_list"]),
+        (["connect", "attach", "watch", "link"], ["connect_file"]),
+    ]
+    static func offered(for text: String, all: Bool = false) -> [String] {
+        let l = text.lowercased()
+        let on = routes.filter { $0.words.contains(where: l.contains) }.reduce(core) { $0.union($1.tools) }
+        return allTools.map(\.name).filter { !internalTools.contains($0) && (all || on.contains($0)) } // allTools order keeps the prefix stable
+    }
     let maxRounds = Int(env("JINN_MAX_ROUNDS") ?? "") ?? 24
+    /// Hard cap on carried context: a small model drifts and invents once old turns pile up, so after this many turns the window is wiped.
+    static let maxTurns = Int(env("JINN_MAX_TURNS") ?? "") ?? 2
     var history: [Msg] = []
-    /// One line per turn that fell out of `history`, so a long conversation keeps its thread.
-    var earlier: [String] = []
     /// Reports (tokens in the prompt, window size) after every model call: the HUD context meter.
     var onContext: (@Sendable (Int, Int) -> Void)?
     /// Our token estimate x calib = the server's count; refined from prompt_eval_count.
     private var calib = 1.0
-    private lazy var schemaTokens = estimateTokens(String(decoding: (try? JSONSerialization.data(withJSONObject: schemas)) ?? Data(), as: UTF8.self))
     /// Learning from a turn runs after the answer is shown; a one-shot caller (--ask) awaits it so the process does not exit first.
     var learning: Task<Void, Never>?
     var confirm: (@Sendable (ConfirmRequest) async -> Decision)?
@@ -67,14 +93,37 @@ final class Agent {
     }
 
     func run(_ text: String, emit: @escaping @Sendable (String) -> Void) async -> String {
-        let ctx = await ContextStore.shared.context(for: text) + (earlier.isEmpty ? "" : "\n\nEarlier in this conversation:\n" + earlier.suffix(12).joined(separator: "\n"))
-        var messages: [Msg] = [["role": "system", "content": systemPrompt(ctx)]] + history.suffix(20)
+        if history.count >= Agent.maxTurns * 2 { history = [] }
+        // fast path: a plain switch command runs at once, no model round trip; a failure falls through to the model
+        if let args = quickControl(text), let tool = tools["mac_control"] {
+            let argJSON = (try? JSONSerialization.data(withJSONObject: args, options: .sortedKeys)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+            emit("-> mac_control \(argJSON) (fast path)")
+            if let refusal = await authorize(tool, args, "mac_control \(argJSON)") { return refusal.replacingOccurrences(of: "error: ", with: "") }
+            let t0 = Date()
+            do {
+                let result = try await tool.run(args)
+                Trace.log(tool: "mac_control", args: argJSON, result: result, ms: Int(Date().timeIntervalSince(t0) * 1000))
+                history += [["role": "user", "content": text], ["role": "assistant", "content": result]]
+                return result
+            } catch { emit("<- error: \(explain(error)); asking the model") }
+        }
+        let ctx = await ContextStore.shared.context(for: text)
+        var names: [String] = [], schemas: [[String: Any]] = [], schemaTokens = 0
+        func offer(_ n: [String]) {
+            names = n
+            schemas = n.compactMap { tools[$0]?.schema }
+            schemaTokens = estimateTokens(String(decoding: (try? JSONSerialization.data(withJSONObject: schemas)) ?? Data(), as: UTF8.self))
+        }
+        offer(Agent.offered(for: text))
+        var messages: [Msg] = [["role": "system", "content": systemPrompt(ctx, tools: names)]] + history
             + [["role": "user", "content": text]]
         var brain = small
         var escalated = false
         func escalate(_ why: String) -> Bool {
             guard !escalated, let b = big else { return false }
             brain = b; escalated = true
+            offer(Agent.offered(for: text, all: true)) // the bigger model gets every tool in case routing missed one
+            messages[0]["content"] = systemPrompt(ctx, tools: names)
             emit("escalating to \(b.model) (\(why))")
             return true
         }
@@ -116,16 +165,12 @@ final class Agent {
                 let answer = r.text.isEmpty ? "Done." : r.text // Ollama rejects empty assistant turns
                 let used = Dictionary(grouping: usedTools, by: { $0 }).map { "\($0.key)×\($0.value.count)" }.sorted().joined(separator: ", ")
                 history += [["role": "user", "content": text], ["role": "assistant", "content": answer + (used.isEmpty ? "" : "\n[tools used: \(used)]")]]
-                while history.count > 20 { // fold the oldest turn into a one-line memory instead of forgetting it
-                    let q = (history.removeFirst()["content"] as? String ?? "").prefix(80), a = (history.removeFirst()["content"] as? String ?? "").prefix(100)
-                    earlier.append("- asked: \(q) / you: \(a.replacingOccurrences(of: "\n", with: " "))")
-                }
                 let small = small
                 learning = Task { for f in await ContextStore.shared.learn(from: text, using: small) { emit("remembered: \(f)") } }
                 return answer
             }
             acted = true
-            for call in r.calls {
+            for call in r.calls.map({ browserRedirect($0, text: text) }) {
                 let argJSON = (try? JSONSerialization.data(withJSONObject: call.args, options: .sortedKeys)).flatMap { String(data: $0, encoding: .utf8) } ?? ""
                 let sig = call.name + argJSON
                 repeats = sig == lastSig ? repeats + 1 : 0
@@ -180,6 +225,16 @@ func loopCorrection(text: String, truncated: Bool, acted: Bool) -> String? {
         return "You described an action but made no tool call, so nothing happened. Call the tool now, or say you cannot do it."
     }
     return nil
+}
+
+/// "Open Chrome and search X": the user wants to watch it, so a hidden web_search / web_fetch / open_url becomes chrome_open. A small model ignores the prompt rule, so this is enforced here.
+func browserRedirect(_ call: ToolCall, text: String) -> ToolCall {
+    guard ["web_search", "web_fetch", "open_url"].contains(call.name),
+          text.range(of: #"\b(chrome|browser|navigate)\b"#, options: [.regularExpression, .caseInsensitive]) != nil else { return call }
+    if call.name != "web_search" { return ToolCall(name: "chrome_open", args: ["url": call.args.opt("url")]) }
+    var c = URLComponents(string: "https://www.google.com/search")!
+    c.queryItems = [URLQueryItem(name: "q", value: call.args.opt("query"))]
+    return ToolCall(name: "chrome_open", args: ["url": c.url!.absoluteString])
 }
 
 /// Tools that drive the screen: their success is only believable if the screen showed a change.

@@ -25,22 +25,26 @@ let chromeTools: [Tool] = [
          params: ["url_contains": "(optional) part of the tab URL or title; default is the active tab"], risk: .confirm) { a in
         try await Chrome.eval(Chrome.page, tab: a.opt("url_contains"))
     },
-    Tool(name: "chrome_open", description: "Open a URL in the user's Chrome (signed-in profile), wait for it to load, and return its questions/fields with ids, kinds, options and which are required. Use first for any Google Form or web form. No need to ask the user for field names; read them from the result.",
+    Tool(name: "chrome_open", description: "Open a URL in the user's Chrome (signed-in profile), wait for it to load, and return its text, or for a form its questions/fields with ids, kinds, options and which are required. Use for any request to open, search or browse in Chrome (search: https://www.google.com/search?q=...), and first for any Google Form or web form. No need to ask the user for field names; read them from the result.",
          params: ["url": "Full http(s) URL"], risk: .confirm, vet: { Web.vet($0.opt("url")) }) { a in
         let u = try Web.url(a)
         _ = try Shell.run("/usr/bin/open", ["-a", Chrome.appName, u.absoluteString])
         let hint = u.path.count > 8 ? u.path : ""
-        var last = "page did not load"
+        var last = "page did not load", loaded = 0
         for _ in 0..<28 {
             try await Task.sleep(nanoseconds: 700_000_000)
+            var seen = false
             for h in (hint.isEmpty ? [""] : [hint, ""]) {
                 guard let r = try? await Chrome.eval(Chrome.run("document.readyState==='complete'?JSON.stringify(status()):'loading'"), tab: h), r != "loading" else { continue }
                 if r.contains("\"questions\":[{") { return await Chrome.withProfileHints(r) }
-                last = r
+                last = r; seen = true
             }
+            // ponytail: ~3s of a loaded page with no questions = not a form; a form that renders later needs chrome_read_form
+            loaded = seen ? loaded + 1 : 0
+            if loaded == 4 { break }
         }
         let page = (try? await Chrome.eval(Chrome.page)) ?? ""
-        return "No form fields found yet. Page: \(page.prefix(1500)). If this is a sign-in page, ask the user to sign in, then call chrome_read_form. \(last.prefix(200))"
+        return "Opened; no form fields on it. Page: \(page.prefix(1500)). To go further, call look, then act on it (click a result, type in its search box). If this is a sign-in page, ask the user to sign in, then call chrome_read_form. \(last.prefix(200))"
     },
     Tool(name: "chrome_read_form", description: "List the questions on the current Chrome page (Google Form or any web form): id, question, kind (text, paragraph, radio, checkbox, dropdown, select, date, time), options, required, answered, plus unanswered_required and the Next/Back/Submit buttons.",
          params: ["url_contains": "(optional) part of the tab URL or title to pick the tab"], risk: .confirm) { a in

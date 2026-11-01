@@ -239,10 +239,22 @@ func selfTest() {
     let names1 = Agent().schemas.map { (($0["function"] as! [String: Any])["name"] as! String) }
     precondition(names1 == allTools.map(\.name).filter { !Agent.internalTools.contains($0) } && names1.contains("look") && names1.contains("act") && !names1.contains("type_text") && names1 == Agent().schemas.map { (($0["function"] as! [String: Any])["name"] as! String) })
     precondition(Set(names1).count == names1.count && allTools.allSatisfy { !$0.description.isEmpty })
+    precondition(Agent.routes.reduce(Agent.core) { $0.union($1.tools) } == Set(names1), "every visible tool must be routable")
+    let hi = Agent.offered(for: "hi"), mail = Agent.offered(for: "Reply to Ravi's email")
+    precondition(hi.contains("look") && hi.contains("act") && !hi.contains("gmail_reply") && hi.count < names1.count / 2 && mail.contains("gmail_reply") && Agent.offered(for: "", all: true) == names1)
+    precondition(!systemPrompt("", tools: hi).contains("chrome_fill_form") && systemPrompt("", tools: Agent.offered(for: "fill this google form")).contains("chrome_fill_form"))
 
     precondition(loopCorrection(text: "", truncated: true, acted: true) != nil && loopCorrection(text: "I clicked Send for you.", truncated: false, acted: false) != nil)
     precondition(loopCorrection(text: "Your mail has 3 unread messages.", truncated: false, acted: false) == nil)
     precondition(loopCorrection(text: "I filled the form.", truncated: false, acted: true) == nil)
+    let toChrome = browserRedirect(ToolCall(name: "web_search", args: ["query": "swift 6"]), text: "Open Chrome and search swift 6")
+    precondition(toChrome.name == "chrome_open" && toChrome.args.opt("url") == "https://www.google.com/search?q=swift%206", "\(toChrome.args)")
+    precondition(browserRedirect(ToolCall(name: "web_fetch", args: ["url": "https://a.com"]), text: "navigate to a.com").args.opt("url") == "https://a.com")
+    precondition(browserRedirect(ToolCall(name: "web_search", args: ["query": "x"]), text: "what is x").name == "web_search")
+    let qc = { (s: String) in quickControl(s).map { "\($0["action"]!) \($0["value"] ?? "")".trimmingCharacters(in: .whitespaces) } }
+    precondition(qc("Turn off Bluetooth.") == "bluetooth off" && qc("wifi on") == "wifi on" && qc("Hey Jinn, next song") == "next" && qc("volume 30") == "volume 30")
+    precondition(qc("play bohemian rhapsody") == "play bohemian rhapsody" && qc("pause music") == "pause" && qc("shut down the mac") == "shutdown")
+    precondition(qc("play lofi on youtube") == nil && qc("turn off the lights") == nil && qc("tell Anu I will sleep early") == nil, "\(qc("play lofi on youtube") ?? "")")
 
     precondition(Click.plan(role: "AXButton", actions: ["AXPress"], inWeb: false, right: false, double: false) == [.press, .pointer])
     precondition(Click.plan(role: "AXLink", actions: ["AXPress"], inWeb: true, right: false, double: false) == [.pointer, .press])
